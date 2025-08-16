@@ -19,7 +19,7 @@ class WorkShiftEnum(str, Enum):
 class QuestionnaireBase(BaseModel):
     weight: Optional[float] = Field(None, ge=0, le=1000, description="Weight in kg")
     height: Optional[float] = Field(None, ge=0, le=300, description="Height in cm")
-    age: Optional[int] = Field(None, ge=0, le=150, description="Age in years")
+    birthday: Optional[datetime] = Field(None, ge=0, le=150, description="Birthday in date")
     health_issues: Optional[str] = Field(None, max_length=1000, description="Health issues description")
     bad_habits: Optional[str] = Field(None, max_length=1000, description="Bad habits description")
     workout_environment: Optional[WorkoutEnvironmentEnum] = Field(None, description="Preferred workout environment")

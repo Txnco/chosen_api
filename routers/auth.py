@@ -8,16 +8,11 @@ from auth.jwt import require_admin
 from auth.jwt import get_current_user
 from models.user import User
 from pydantic import BaseModel
+from database import get_db
 
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @auth_router.post("/register")
 def register(first_name: str, last_name:str, email: str, password: str,  db: Session = Depends(get_db), current_user=Depends(require_admin)):

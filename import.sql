@@ -1,0 +1,190 @@
+CREATE TABLE `roles` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`name` VARCHAR(50) NOT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	PRIMARY KEY(`id`)
+);
+
+INSERT INTO `roles` (`id`, `name`, `created_at`, `updated_at`) VALUES
+(1, 'admin', '2025-07-15 22:11:38', '2025-07-15 22:11:38'),
+(2, 'client', '2025-07-15 22:11:38', '2025-07-15 22:11:38');
+
+CREATE TABLE `users` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`role_id` INTEGER NOT NULL DEFAULT 2,
+	`first_name` VARCHAR(100) NOT NULL,
+	`last_name` VARCHAR(100) NOT NULL,
+	`email` VARCHAR(255) NOT NULL,
+	`password_hash` VARCHAR(255) NOT NULL,
+	`reset_token` VARCHAR(255) DEFAULT NULL,
+	`reset_token_expires_at` DATETIME DEFAULT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	`deleted_at` DATETIME DEFAULT NULL,
+	PRIMARY KEY(`id`)
+);
+
+INSERT INTO `users` (`id`, `role_id`, `first_name`, `last_name`, `email`, `password_hash`, `reset_token`, `reset_token_expires_at`, `created_at`, `updated_at`, `deleted_at`) VALUES
+(1, 1, 'Antonio', 'Ivanovic', 'admin@chosen.hr', '$2b$12$bGXuQnJQZG5RuTIeT09in.mGXJyzsi/9EDBT.hTPFBZk.ZiOltLIi', NULL, NULL, '2025-07-15 22:23:46', '2025-07-15 22:24:41', NULL),
+(2, 2, 'Mario', 'Kraljic', 'mario.kraljic@gmail.com', '$2b$12$1L/XuxtxHbwPnHBLHomOd.CG3zcRZo8lggEghvHQ4sLPOFRAP2faG', NULL, NULL, '2025-08-11 18:48:53', '2025-08-11 18:48:53', NULL),
+(3, 2, 'Ivano', 'Miric', 'ivano.miric@gmail.com', '$2b$12$C/PXYcj1gvzrrvVN8QFBNuKMqAl01EHApX4GenteqkIDGjZCwEISa', NULL, NULL, '2025-08-11 18:49:23', '2025-08-11 18:49:23', NULL);
+
+
+CREATE TABLE `user_questionnaire` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`user_id` INTEGER NOT NULL,
+	`weight` FLOAT DEFAULT NULL,
+	`height` FLOAT DEFAULT NULL,
+	`birthday` DATE,
+	`health_issues` TEXT DEFAULT NULL,
+	`bad_habits` TEXT DEFAULT NULL,
+	`workout_environment` ENUM('gym', 'home', 'outdoor', 'both') DEFAULT NULL,
+	`work_shift` ENUM('morning', 'afternoon', 'night', 'split', 'flexible') DEFAULT NULL,
+	`wake_up_time` VARCHAR(10) DEFAULT NULL,
+	`sleep_time` VARCHAR(10) DEFAULT NULL,
+	`morning_routine` TEXT DEFAULT NULL,
+	`evening_routine` TEXT DEFAULT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	PRIMARY KEY(`id`)
+);
+
+
+CREATE TABLE `water_goal` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`user_id` INTEGER NOT NULL,
+	`daily_ml` INTEGER NOT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	PRIMARY KEY(`id`)
+);
+
+
+CREATE TABLE `water_tracking` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`user_id` INTEGER NOT NULL,
+	`water_intake` INTEGER NOT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	`deleted_at` DATETIME DEFAULT NULL,
+	PRIMARY KEY(`id`)
+);
+
+
+CREATE TABLE `weight_tracking` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`user_id` INTEGER NOT NULL,
+	`weight` DECIMAL NOT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	`deleted_at` DATETIME DEFAULT NULL,
+	PRIMARY KEY(`id`)
+);
+
+
+CREATE TABLE `day_rating` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`user_id` INTEGER NOT NULL,
+	`score` TINYINT DEFAULT NOT NULL,
+	`note` TEXT(65535) DEFAULT NOT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	PRIMARY KEY(`id`)
+);
+
+
+CREATE TABLE `progress_photos` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`user_id` INTEGER NOT NULL,
+	`angle` ENUM('front', 'side', 'back') NOT NULL,
+	`image_url` VARCHAR(255) NOT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	`deleted_at` DATETIME DEFAULT NULL,
+	PRIMARY KEY(`id`)
+);
+
+
+CREATE TABLE `chat_threads` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`client_id` INTEGER NOT NULL,
+	`trainer_id` INTEGER NOT NULL,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	`deleted_at` DATETIME DEFAULT NULL,
+	PRIMARY KEY(`id`)
+);
+
+
+CREATE TABLE `chat_messages` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`thread_id` INTEGER NOT NULL,
+	`user_id` INTEGER NOT NULL,
+	`body` TEXT(65535) NOT NULL,
+	`image_url` VARCHAR(255),
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	PRIMARY KEY(`id`)
+);
+
+-- WE DONT HAVE SCHEMAS AND MODEL FOR THIS YET
+CREATE TABLE `reminder_settings` (
+	`id` INT NOT NULL AUTO_INCREMENT,
+	`user_id` INTEGER NOT NULL,
+	`water_reminder` TINYINT NOT NULL DEFAULT 1,
+	`scale_reminder` TINYINT NOT NULL DEFAULT 1,
+	`photo_reminder` TINYINT NOT NULL DEFAULT 1,
+	`plan_day_reminder` TINYINT NOT NULL DEFAULT 1,
+	`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+	`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+	PRIMARY KEY(`id`)
+);
+
+
+ALTER TABLE `users`
+ADD FOREIGN KEY(`role_id`) REFERENCES `roles`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `user_questionnaire`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `water_tracking`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `day_rating`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `progress_photos`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `chat_messages`
+ADD FOREIGN KEY(`thread_id`) REFERENCES `chat_threads`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `chat_messages`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `chat_threads`
+ADD FOREIGN KEY(`client_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `chat_threads`
+ADD FOREIGN KEY(`trainer_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `weight_tracking`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `water_goal`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE `reminder_settings`
+ADD FOREIGN KEY(`user_id`) REFERENCES `users`(`id`)
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+
+
+ALTER TABLE chat_threads
+  ADD UNIQUE KEY uniq_pair (client_id, trainer_id);
+
+--
+-- AUTO_INCREMENT for table `users`
+--
+ALTER TABLE `users`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;

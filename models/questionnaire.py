@@ -25,7 +25,7 @@ class UserQuestionnaire(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     weight = Column(Float, nullable=True)
     height = Column(Float, nullable=True)
-    age = Column(Integer, nullable=True)
+    birthday = Column(DateTime, nullable=True)  # Changed from age to birthday
     health_issues = Column(Text, nullable=True)
     bad_habits = Column(Text, nullable=True)
     workout_environment = Column(Enum(WorkoutEnvironmentEnum), nullable=True)

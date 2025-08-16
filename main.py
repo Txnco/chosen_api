@@ -4,6 +4,8 @@ from database import Base, engine
 from routers.auth import auth_router
 from routers.user import user_router
 from routers.questionnaire import quest_router
+from routers.chat import chat_router
+from routers.tracking import tracking_router
 from models.role import Role
 from models.user import User
 from models.questionnaire import UserQuestionnaire
@@ -15,6 +17,8 @@ Base.metadata.create_all(bind=engine)
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(quest_router)
+app.include_router(chat_router)
+app.include_router(tracking_router)
 
 # ✅ Setup basic logger
 logging.basicConfig(level=logging.INFO)
