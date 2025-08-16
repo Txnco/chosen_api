@@ -9,40 +9,39 @@ from typing import Optional
 quest_router = APIRouter(prefix="/questionnaire", tags=["Questionnaire"])
 
 @quest_router.post("/", response_model=QuestionnaireResponse)
-def create_questionnaire(
+def upsert_questionnaire(
     data: QuestionnaireCreate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Create/Submit user questionnaire"""
-    # Check if user already has a questionnaire
-    existing = db.query(UserQuestionnaire).filter(
-        UserQuestionnaire.user_id == current_user["user_id"]
-    ).first()
-    
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Questionnaire already exists. Use PUT to update."
-        )
+    user_id = current_user["user_id"]
+    payload = data.model_dump(exclude_unset=True)  # only provided fields
 
-    # Create new questionnaire
-    questionnaire = UserQuestionnaire(
-        user_id=current_user["user_id"],
-        **data.model_dump()
+    existing = (
+        db.query(UserQuestionnaire)
+        .filter(UserQuestionnaire.user_id == user_id)
+        .first()
     )
-    
+
     try:
-        db.add(questionnaire)
-        db.commit()
-        db.refresh(questionnaire)
-        return questionnaire
+        if existing:
+            # update existing
+            for field, value in payload.items():
+                setattr(existing, field, value)
+            db.commit()
+            db.refresh(existing)
+            return existing
+        else:
+            # create new
+            row = UserQuestionnaire(user_id=user_id, **payload)
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return row
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create questionnaire: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Upsert failed: {e}")
+
 
 @quest_router.get("/", response_model=Optional[QuestionnaireResponse])
 def get_user_questionnaire(

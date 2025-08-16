@@ -10,5 +10,7 @@
 
 # pip install pydantic[email]
 
+# py -m pip install python-multipart
+
 # TO RUN THE APP USE
 uvicorn main:app --reload

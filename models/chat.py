@@ -32,6 +32,7 @@ class ChatMessage(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     body = Column(Text, nullable=False)
     image_url = Column(String(255), nullable=True)
+    read_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.current_timestamp())
     updated_at = Column(
         DateTime, 

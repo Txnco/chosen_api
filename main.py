@@ -11,6 +11,8 @@ from models.user import User
 from models.questionnaire import UserQuestionnaire
 import logging
 
+from fastapi.exceptions import RequestValidationError
+
 app = FastAPI()
 Base.metadata.create_all(bind=engine)
 
@@ -33,3 +35,11 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     logger.info(f"⬅️ Response status: {response.status_code}")
     return response
+
+logger = logging.getLogger("uvicorn.error")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error("Validation error on %s %s: %s", request.method, request.url, exc.errors())
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
