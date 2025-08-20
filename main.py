@@ -19,7 +19,7 @@ from pathlib import Path
 
 from fastapi.exceptions import RequestValidationError
 
-app = FastAPI(title="CHOSEN API", version="1.0.0")
+app = FastAPI(title="chosen-api", version="1.0.0")
 Base.metadata.create_all(bind=engine)
 
 # ✅ Create logs directory
