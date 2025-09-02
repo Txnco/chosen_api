@@ -17,10 +17,28 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 
 app = FastAPI(title="chosen-api", version="1.0.0")
 Base.metadata.create_all(bind=engine)
+
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1",
+    "https://admin.chosen-international.com", 
+    "https://admin.chosen-international.com/api"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ✅ Create logs directory
 logs_dir = Path("logs")
