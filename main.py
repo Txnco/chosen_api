@@ -16,6 +16,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -151,103 +152,140 @@ def format_json_for_log(data, max_length=1000):
     except Exception:
         return str(data)
 
-async def get_request_body(request: Request):
-    """Safely get request body"""
-    try:
-        body = await request.body()
-        request._body = body
-        return body.decode('utf-8') if body else None
-    except Exception as e:
-        logger.error(f"Error reading request body: {e}")
-        return None
+
+SAFE_BODY_LOG_BYTES = 64_000  # 64KB cap to avoid huge logs
+TEXT_TYPES_PREFIXES = (
+    "application/json",
+    "application/x-www-form-urlencoded",
+    "text/",
+)
+
+def _is_textual(content_type: Optional[str]) -> bool:
+    if not content_type:
+        return False
+    ct = content_type.split(";")[0].strip().lower()
+    return ct.startswith(TEXT_TYPES_PREFIXES)
+
+def _is_multipart(content_type: Optional[str]) -> bool:
+    return bool(content_type and content_type.lower().startswith("multipart/form-data"))
 
 # ✅ Enhanced middleware
 @app.middleware("http")
 async def comprehensive_logging_middleware(request: Request, call_next):
-    # Generate unique request ID and start timing
+    # Generate request id & timing
     request_id = f"req_{int(time.time() * 1000)}"
     start_time = time.time()
-    
-    # Get client info
+
     client_ip = request.client.host if request.client else "unknown"
-    user_agent = request.headers.get("user-agent", "")
-    
-    # Log incoming request
-    logger.info(
-        f"🔵 [{request_id}] {request.method} {request.url.path} | Client: {client_ip}",
-        extra={'color': True}
-    )
-    
-    # Log query parameters
+    logger.info(f"🔵 [{request_id}] {request.method} {request.url.path} | Client: {client_ip}", extra={"color": True})
+
     if request.query_params:
-        logger.info(f"🔍 [{request_id}] Query: {dict(request.query_params)}", extra={'color': True})
-    
-    # Log request body
-    body = await get_request_body(request)
-    if body:
-        try:
-            json_body = json.loads(body)
-            formatted_body = format_json_for_log(json_body)
-            logger.info(f"📄 [{request_id}] Body:\n{formatted_body}", extra={'color': True})
-        except json.JSONDecodeError:
-            logger.info(f"📄 [{request_id}] Body: {body[:500]}{'...' if len(body) > 500 else ''}", extra={'color': True})
-    
-    # Log authorization (masked)
-    if request.headers.get("authorization"):
-        logger.info(f"🔑 [{request_id}] Auth: Bearer ***", extra={'color': True})
-    
+        logger.info(f"🔍 [{request_id}] Query: {dict(request.query_params)}", extra={"color": True})
+
+    # ----- Request body logging (safe) -----
+    content_type = request.headers.get("content-type", "")
+    content_length_hdr = request.headers.get("content-length")
     try:
-        # Process request
+        content_length = int(content_length_hdr) if content_length_hdr else None
+    except ValueError:
+        content_length = None
+
+    if _is_multipart(content_type):
+        # Don’t try to read file bytes
+        logger.info(f"📄 [{request_id}] Body: <multipart/form-data: skipped logging>", extra={"color": True})
+    elif _is_textual(content_type):
+        try:
+            # Only read if not too large
+            if content_length and content_length > SAFE_BODY_LOG_BYTES:
+                logger.info(
+                    f"📄 [{request_id}] Body: <{content_type} {content_length} bytes: skipped (too large)>",
+                    extra={"color": True},
+                )
+            else:
+                raw = await request.body()  # Starlette caches this, downstream can still read
+                if len(raw) > SAFE_BODY_LOG_BYTES:
+                    raw = raw[:SAFE_BODY_LOG_BYTES]
+                    truncated = True
+                else:
+                    truncated = False
+
+                # Try JSON pretty print first
+                if content_type.lower().startswith("application/json"):
+                    try:
+                        parsed = json.loads(raw.decode("utf-8"))
+                        formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
+                        if truncated:
+                            formatted += "\n... [truncated]"
+                        logger.info(f"📄 [{request_id}] Body (JSON):\n{formatted}", extra={"color": True})
+                    except Exception:
+                        # Fallback to plain text
+                        text = raw.decode("utf-8", errors="replace")
+                        if truncated:
+                            text += "... [truncated]"
+                        logger.info(f"📄 [{request_id}] Body (text): {text}", extra={"color": True})
+                else:
+                    # urlencoded / text/*
+                    text = raw.decode("utf-8", errors="replace")
+                    if truncated:
+                        text += "... [truncated]"
+                    logger.info(f"📄 [{request_id}] Body (text): {text}", extra={"color": True})
+        except Exception as e:
+            # Never fail the request because of logging
+            logger.error(f"Error reading request body: {e}", extra={"color": True})
+    else:
+        # Unknown/binary type
+        if content_length is not None:
+            logger.info(
+                f"📄 [{request_id}] Body: <{content_type or 'unknown type'} {content_length} bytes: not logged>",
+                extra={"color": True},
+            )
+        else:
+            logger.info(
+                f"📄 [{request_id}] Body: <{content_type or 'unknown type'}: not logged>",
+                extra={"color": True},
+            )
+
+    # Masked auth header
+    if request.headers.get("authorization"):
+        logger.info(f"🔑 [{request_id}] Auth: Bearer ***", extra={"color": True})
+
+    # ----- Call downstream -----
+    try:
         response = await call_next(request)
         process_time = time.time() - start_time
-        
-        # Choose emoji based on status
-        if response.status_code < 300:
-            emoji = "✅"
-        elif response.status_code < 400:
-            emoji = "🔄"
-        elif response.status_code < 500:
-            emoji = "⚠️"
-        else:
-            emoji = "❌"
-        
-        # Log response
-        content_length = response.headers.get('content-length', 'unknown')
-        logger.info(
-            f"{emoji} [{request_id}] {response.status_code} | {process_time:.3f}s | {content_length} bytes",
-            extra={'color': True}
-        )
-        
-        # Log slow requests
+
+        # Status emoji
+        emoji = "✅" if response.status_code < 300 else "🔄" if response.status_code < 400 else "⚠️" if response.status_code < 500 else "❌"
+
+        content_length_resp = response.headers.get("content-length", "unknown")
+        logger.info(f"{emoji} [{request_id}] {response.status_code} | {process_time:.3f}s | {content_length_resp} bytes", extra={"color": True})
+
         if process_time > 1.0:
-            logger.warning(
-                f"🐌 [{request_id}] SLOW REQUEST: {process_time:.3f}s for {request.method} {request.url.path}",
-                extra={'color': True}
-            )
-        
-        # Log response body for errors
+            logger.warning(f"🐌 [{request_id}] SLOW REQUEST: {process_time:.3f}s for {request.method} {request.url.path}", extra={"color": True})
+
+        # Log small error bodies (best effort, don’t crash)
         if response.status_code >= 400:
             try:
-                if hasattr(response, 'body') and response.body:
-                    body_content = response.body.decode('utf-8')
-                    if len(body_content) > 500:
-                        body_content = body_content[:500] + "... [truncated]"
-                    logger.info(f"📄 [{request_id}] Response: {body_content}", extra={'color': True})
+                # Many responses are already fully built; .body may not exist for streaming
+                body_bytes = getattr(response, "body", None)
+                if body_bytes is not None:
+                    preview = body_bytes[:SAFE_BODY_LOG_BYTES]
+                    text = preview.decode("utf-8", errors="replace")
+                    if len(body_bytes) > SAFE_BODY_LOG_BYTES:
+                        text += "... [truncated]"
+                    logger.info(f"📄 [{request_id}] Response: {text}", extra={"color": True})
             except Exception:
                 pass
-        
+
         return response
-        
+
     except Exception as e:
         process_time = time.time() - start_time
-        
         logger.error(
-            f"💥 [{request_id}] EXCEPTION: {request.method} {request.url.path} | "
-            f"Error: {str(e)} | Time: {process_time:.3f}s",
+            f"💥 [{request_id}] EXCEPTION: {request.method} {request.url.path} | Error: {str(e)} | Time: {process_time:.3f}s",
             exc_info=True,
-            extra={'color': True}
+            extra={"color": True},
         )
-        
         raise
 
 # ✅ Exception handlers
