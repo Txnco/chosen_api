@@ -14,8 +14,11 @@ from models.user import User
 from models.weight_tracking import WeightTracking
 from schema.weight_tracking import WeightTrackingCreate, WeightTrackingUpdate, WeightTrackingResponse
 from functions.upload import upload_profile_image
-from main import logger
 from models.user import User
+
+
+import logging
+logger = logging.getLogger("chosen_api")
 
 user_router = APIRouter(prefix="/user", tags=["User"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -146,10 +149,17 @@ def update_user(
         try:
             filename = upload_profile_image(profile_picture)
             user.profile_picture = filename
-        except HTTPException as e:
-            raise e
+        except HTTPException:
+            # HTTPExceptions are already meaningful; still log with stack
+            logger.exception("HTTP error while uploading profile for user_id=%s", user_id)
+            raise
         except Exception as e:
-            logger.info(f"Exception [{str(e)}]")
+            # Log full traceback and context BEFORE raising
+            logger.exception(
+                "Unexpected error uploading profile picture for user_id=%s, filename=%s",
+                user_id,
+                getattr(profile_picture, "filename", None),
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to upload profile picture: {str(e)}"

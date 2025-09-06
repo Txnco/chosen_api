@@ -9,6 +9,7 @@ from routers.tracking import tracking_router
 from models.role import Role
 from models.user import User
 from models.questionnaire import UserQuestionnaire
+from starlette.responses import StreamingResponse, FileResponse
 import logging
 import logging.handlers
 import time
@@ -153,6 +154,19 @@ def format_json_for_log(data, max_length=1000):
         return str(data)
 
 
+def _safe_content_length(resp) -> str:
+    try:
+        # Prefer explicit header if present
+        cl = resp.headers.get("content-length")
+        if cl is not None:
+            return cl  # header values are strings
+        # If it's a streaming/file response, length is typically unknown
+        if isinstance(resp, (StreamingResponse, FileResponse)):
+            return "streaming"
+    except Exception:
+        pass
+    return "unknown"
+
 SAFE_BODY_LOG_BYTES = 64_000  # 64KB cap to avoid huge logs
 TEXT_TYPES_PREFIXES = (
     "application/json",
@@ -261,7 +275,16 @@ async def comprehensive_logging_middleware(request: Request, call_next):
         emoji = "✅" if response.status_code < 300 else "🔄" if response.status_code < 400 else "⚠️" if response.status_code < 500 else "❌"
 
         content_length_resp = response.headers.get("content-length", "unknown")
-        # logger.info(f"{emoji} [{request_id}] {response.status_code} | {process_time:.3f}s | {content_length_resp} bytes", extra={"color": True})
+        content_length_resp = _safe_content_length(response)
+        try:
+            logger.info(
+                f"{emoji} [{request_id}] {response.status_code} | "
+                f"{process_time:.3f}s | {content_length_resp} bytes",
+                extra={"color": True},
+            )
+        except Exception as log_err:
+            # Never let logging crash the request
+            logger.error(f"Response logging failed: {log_err}", extra={"color": True})
 
         if process_time > 1.0:
             logger.warning(f"🐌 [{request_id}] SLOW REQUEST: {process_time:.3f}s for {request.method} {request.url.path}", extra={"color": True})
