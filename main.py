@@ -169,7 +169,7 @@ def _is_textual(content_type: Optional[str]) -> bool:
 def _is_multipart(content_type: Optional[str]) -> bool:
     return bool(content_type and content_type.lower().startswith("multipart/form-data"))
 
-# ✅ Enhanced middleware
+# ✅ Enhanced middleware - FIXED for file uploads
 @app.middleware("http")
 async def comprehensive_logging_middleware(request: Request, call_next):
     # Generate request id & timing
@@ -190,9 +190,10 @@ async def comprehensive_logging_middleware(request: Request, call_next):
     except ValueError:
         content_length = None
 
+    # CRITICAL FIX: Don't read request body for multipart requests
     if _is_multipart(content_type):
-        # Don’t try to read file bytes
-        logger.info(f"📄 [{request_id}] Body: <multipart/form-data: skipped logging>", extra={"color": True})
+        # Don't try to read file bytes - this breaks file uploads
+        logger.info(f"📄 [{request_id}] Body: <multipart/form-data with files: {content_length or 'unknown'} bytes>", extra={"color": True})
     elif _is_textual(content_type):
         try:
             # Only read if not too large
@@ -202,6 +203,7 @@ async def comprehensive_logging_middleware(request: Request, call_next):
                     extra={"color": True},
                 )
             else:
+                # SAFE: Only read body for non-multipart requests
                 raw = await request.body()  # Starlette caches this, downstream can still read
                 if len(raw) > SAFE_BODY_LOG_BYTES:
                     raw = raw[:SAFE_BODY_LOG_BYTES]
@@ -213,6 +215,7 @@ async def comprehensive_logging_middleware(request: Request, call_next):
                 if content_type.lower().startswith("application/json"):
                     try:
                         parsed = json.loads(raw.decode("utf-8"))
+                        parsed = mask_sensitive_data(parsed)  # Mask sensitive data
                         formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
                         if truncated:
                             formatted += "\n... [truncated]"
@@ -231,7 +234,7 @@ async def comprehensive_logging_middleware(request: Request, call_next):
                     logger.info(f"📄 [{request_id}] Body (text): {text}", extra={"color": True})
         except Exception as e:
             # Never fail the request because of logging
-            logger.error(f"Error reading request body: {e}", extra={"color": True})
+            logger.error(f"❌ [{request_id}] Error reading request body: {e}", extra={"color": True})
     else:
         # Unknown/binary type
         if content_length is not None:
@@ -263,17 +266,17 @@ async def comprehensive_logging_middleware(request: Request, call_next):
         if process_time > 1.0:
             logger.warning(f"🐌 [{request_id}] SLOW REQUEST: {process_time:.3f}s for {request.method} {request.url.path}", extra={"color": True})
 
-        # Log small error bodies (best effort, don’t crash)
+        # Log error response bodies for debugging
         if response.status_code >= 400:
             try:
-                # Many responses are already fully built; .body may not exist for streaming
+                # Only log error responses that are small and text-based
                 body_bytes = getattr(response, "body", None)
-                if body_bytes is not None:
-                    preview = body_bytes[:SAFE_BODY_LOG_BYTES]
-                    text = preview.decode("utf-8", errors="replace")
-                    if len(body_bytes) > SAFE_BODY_LOG_BYTES:
-                        text += "... [truncated]"
-                    logger.info(f"📄 [{request_id}] Response: {text}", extra={"color": True})
+                if body_bytes is not None and len(body_bytes) < 1000:
+                    try:
+                        text = body_bytes.decode("utf-8", errors="replace")
+                        logger.info(f"📄 [{request_id}] Error Response: {text}", extra={"color": True})
+                    except Exception:
+                        logger.info(f"📄 [{request_id}] Error Response: <{len(body_bytes)} bytes, not text>", extra={"color": True})
             except Exception:
                 pass
 
