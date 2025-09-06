@@ -33,6 +33,7 @@ def get_current_user(current_user=Depends(get_current_user), db: Session = Depen
         "first_name": user.first_name,
         "last_name": user.last_name,
         "email": user.email,
+        "profile_picture": user.profile_picture,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
@@ -68,6 +69,7 @@ def get_user_by_id(
         "first_name": user.first_name,
         "last_name": user.last_name,
         "email": user.email,
+        "profile_picture": user.profile_picture,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
@@ -82,6 +84,7 @@ def get_all_users(current_user=Depends(require_admin), db: Session = Depends(get
             "first_name": user.first_name,
             "last_name": user.last_name,
             "email": user.email,
+            "profile_picture": user.profile_picture,
             "created_at": user.created_at,
             "updated_at": user.updated_at,
         }
