@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from database import SessionLocal
@@ -9,6 +9,9 @@ from auth.jwt import get_current_user
 from models.user import User
 from pydantic import BaseModel
 from database import get_db
+from typing import Optional
+from functions.upload import upload_profile_image
+
 
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -20,26 +23,58 @@ class RegisterRequest(BaseModel):
     password: str
 
 @auth_router.post("/register")
-def register(data: RegisterRequest,  db: Session = Depends(get_db), current_user=Depends(require_admin)):
-    hashed_pw = pwd_context.hash(data.password)
-    existing_user = db.query(User).filter(User.email == data.email).first()
+def register(
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    profile_picture: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db), 
+    current_user=Depends(require_admin)
+):
+    hashed_pw = pwd_context.hash(password)
+    existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A user with that email already exists."
         )
 
+    # Handle profile picture upload
+    profile_picture_filename = None
+    if profile_picture:
+        try:
+            profile_picture_filename = upload_profile_image(profile_picture)
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload profile picture: {str(e)}"
+            )
+
     new_user = User(
-        email=data.email,
+        email=email,
         password_hash=hashed_pw,
-        first_name=data.first_name,
-        last_name=data.last_name,
-        role_id=2
+        first_name=first_name,
+        last_name=last_name,
+        role_id=2,
+        profile_picture=profile_picture_filename
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return {"message": f"User created by user {current_user['user_id']}"}
+    return {
+        "message": f"User created by user {current_user['user_id']}",
+        "user": {
+            "id": new_user.id,
+            "email": new_user.email,
+            "first_name": new_user.first_name,
+            "last_name": new_user.last_name,
+            "role_id": new_user.role_id,
+            "profile_picture": new_user.profile_picture,
+        }
+    }
 
 
 class LoginRequest(BaseModel):

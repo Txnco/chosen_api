@@ -13,6 +13,7 @@ class User(Base):
     last_name = Column(String(100), nullable=False)
     email = Column(String(255), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
+    profile_picture = Column(String(255), nullable=False)
     reset_token = Column(String(255), nullable=True)
     reset_token_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.current_timestamp())

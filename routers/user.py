@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from decimal import Decimal
@@ -8,13 +8,12 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from passlib.context import CryptContext
 
-
-
 from database import get_db
 from auth.jwt import get_current_user, require_admin
 from models.user import User
 from models.weight_tracking import WeightTracking
 from schema.weight_tracking import WeightTrackingCreate, WeightTrackingUpdate, WeightTrackingResponse
+from functions.upload import upload_profile_image
 
 from models.user import User
 
@@ -116,7 +115,12 @@ class UserUpdate(BaseModel):
 @user_router.put("/{user_id}")
 def update_user(
     user_id: int,
-    data: UserUpdate,
+    first_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    password: Optional[str] = Form(None),
+    role_id: Optional[int] = Form(None),
+    profile_picture: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
@@ -129,27 +133,40 @@ def update_user(
         )
 
     # 2. Check for duplicate email if updated
-    if data.email and data.email != user.email:
-        existing_user = db.query(User).filter(User.email == data.email).first()
+    if email and email != user.email:
+        existing_user = db.query(User).filter(User.email == email).first()
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already in use",
             )
 
-    # 3. Update only provided fields
-    if data.email:
-        user.email = data.email
-    if data.password:  # optional
-        user.password_hash = pwd_context.hash(data.password)
-    if data.first_name:
-        user.first_name = data.first_name
-    if data.last_name:
-        user.last_name = data.last_name
-    if data.role_id is not None:  # optional
-        user.role_id = data.role_id
+    # 3. Handle profile picture upload
+    if profile_picture:
+        try:
+            filename = upload_profile_image(profile_picture)
+            user.profile_picture = filename
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload profile picture: {str(e)}"
+            )
 
-    # 4. Save changes
+    # 4. Update only provided fields
+    if email:
+        user.email = email
+    if password:
+        user.password_hash = pwd_context.hash(password)
+    if first_name:
+        user.first_name = first_name
+    if last_name:
+        user.last_name = last_name
+    if role_id is not None:
+        user.role_id = role_id
+
+    # 5. Save changes
     db.commit()
     db.refresh(user)
 
@@ -161,5 +178,7 @@ def update_user(
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role_id": user.role_id,
+            "profile_picture": user.profile_picture,
         },
     }
+
