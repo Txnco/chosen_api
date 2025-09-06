@@ -261,7 +261,7 @@ async def comprehensive_logging_middleware(request: Request, call_next):
         emoji = "✅" if response.status_code < 300 else "🔄" if response.status_code < 400 else "⚠️" if response.status_code < 500 else "❌"
 
         content_length_resp = response.headers.get("content-length", "unknown")
-        logger.info(f"{emoji} [{request_id}] {response.status_code} | {process_time:.3f}s | {content_length_resp} bytes", extra={"color": True})
+        # logger.info(f"{emoji} [{request_id}] {response.status_code} | {process_time:.3f}s | {content_length_resp} bytes", extra={"color": True})
 
         if process_time > 1.0:
             logger.warning(f"🐌 [{request_id}] SLOW REQUEST: {process_time:.3f}s for {request.method} {request.url.path}", extra={"color": True})
