@@ -3,6 +3,12 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from decimal import Decimal
 from datetime import datetime
+from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from passlib.context import CryptContext
+
+
 
 from database import get_db
 from auth.jwt import get_current_user, require_admin
@@ -13,6 +19,8 @@ from schema.weight_tracking import WeightTrackingCreate, WeightTrackingUpdate, W
 from models.user import User
 
 user_router = APIRouter(prefix="/user", tags=["User"])
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 @user_router.get('/me')
 def get_current_user(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
@@ -97,3 +105,61 @@ def delete_user(
     db.commit()
     
     return {"message": f"User {user_id} deleted"}
+
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    role_id: Optional[int] = None
+
+@user_router.put("/{user_id}")
+def update_user(
+    user_id: int,
+    data: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    # 1. Find user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with id {user_id} not found",
+        )
+
+    # 2. Check for duplicate email if updated
+    if data.email and data.email != user.email:
+        existing_user = db.query(User).filter(User.email == data.email).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already in use",
+            )
+
+    # 3. Update only provided fields
+    if data.email:
+        user.email = data.email
+    if data.password:  # optional
+        user.password_hash = pwd_context.hash(data.password)
+    if data.first_name:
+        user.first_name = data.first_name
+    if data.last_name:
+        user.last_name = data.last_name
+    if data.role_id is not None:  # optional
+        user.role_id = data.role_id
+
+    # 4. Save changes
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "message": f"User {user.id} updated by admin {current_user['user_id']}",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role_id": user.role_id,
+        },
+    }
