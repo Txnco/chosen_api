@@ -14,7 +14,7 @@ from models.user import User
 from models.weight_tracking import WeightTracking
 from schema.weight_tracking import WeightTrackingCreate, WeightTrackingUpdate, WeightTrackingResponse
 from functions.upload import upload_profile_image
-
+from main import logger
 from models.user import User
 
 user_router = APIRouter(prefix="/user", tags=["User"])
@@ -149,6 +149,7 @@ def update_user(
         except HTTPException as e:
             raise e
         except Exception as e:
+            logger.info(f"Exception [{str(e)}]")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to upload profile picture: {str(e)}"
