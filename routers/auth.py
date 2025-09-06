@@ -13,23 +13,27 @@ from database import get_db
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+class RegisterRequest(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    password: str
 
 @auth_router.post("/register")
-def register(first_name: str, last_name:str, email: str, password: str,  db: Session = Depends(get_db), current_user=Depends(require_admin)):
-    hashed_pw = pwd_context.hash(password)
-    existing_user = db.query(User).filter(User.email == email).first()
+def register(data: RegisterRequest,  db: Session = Depends(get_db), current_user=Depends(require_admin)):
+    hashed_pw = pwd_context.hash(data.password)
+    existing_user = db.query(User).filter(User.email == data.email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A user with that email already exists."
         )
 
-    hashed_pw = pwd_context.hash(password)
     new_user = User(
-        email=email,
+        email=data.email,
         password_hash=hashed_pw,
-        first_name=first_name,
-        last_name=last_name,
+        first_name=data.first_name,
+        last_name=data.last_name,
         role_id=2
     )
     db.add(new_user)

@@ -1,0 +1,38 @@
+INFO:     Started server process [5170]
+INFO:     Waiting for application startup.
+2025-08-20 18:48:25 | [32mINFO[0m | 🚀 CHOSEN API Starting up...
+2025-08-20 18:48:25 | [32mINFO[0m | 📁 Logs directory: /var/www/admin.chosen-international.com/api/logs
+2025-08-20 18:48:25 | [32mINFO[0m | ✅ CHOSEN API Started successfully!
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+2025-08-20 18:48:25 | [32mINFO[0m | 🛑 CHOSEN API Shutting down...
+2025-08-20 18:48:25 | [32mINFO[0m | ✅ CHOSEN API Stopped successfully!
+ERROR:    Traceback (most recent call last):
+  File "/usr/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/usr/lib/python3.13/asyncio/runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/var/www/admin.chosen-international.com/api/.venv/lib/python3.13/site-packages/starlette/routing.py", line 701, in lifespan
+    await receive()
+  File "/var/www/admin.chosen-international.com/api/.venv/lib/python3.13/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/asyncio/queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
