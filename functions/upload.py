@@ -69,7 +69,7 @@ def upload_profile_image(file: UploadFile) -> str:
             image = image.convert("RGB")
         
         # 11. Save file
-        file_path = UPLOAD_DIR + "/profile/ "+  secure_filename
+        file_path = UPLOAD_DIR / "profile" /  secure_filename
         image.save(file_path, format="JPEG", quality=85, optimize=True)
         
         return secure_filename
