@@ -138,14 +138,14 @@ def update_user(
             detail=f"User with id {user_id} not found",
         )
 
-    # 2. Check for duplicate email if updated
-    if email and email != user.email:
-        existing_user = db.query(User).filter(User.email == email).first()
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already in use",
-            )
+    # # 2. Check for duplicate email if updated
+    # if email and email != user.email:
+    #     existing_user = db.query(User).filter(User.email == email).first()
+    #     if existing_user:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_400_BAD_REQUEST,
+    #             detail="Email already in use",
+    #         )
 
     # 3. Handle profile picture upload
     if profile_picture:
