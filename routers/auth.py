@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, UploadFile, File, Form, Request
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from database import SessionLocal
@@ -10,6 +10,7 @@ from models.user import User
 from pydantic import BaseModel
 from database import get_db
 from typing import Optional
+from models.user_login import UserLogin
 from functions.upload import upload_profile_image
 
 
@@ -82,12 +83,23 @@ class LoginRequest(BaseModel):
     password: str
 
 @auth_router.post("/login")
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email= data.email
     password = data.password
     user = db.query(User).filter(User.email == email, User.deleted_at == None).first()
     if not user or not pwd_context.verify(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    login_record = UserLogin(
+        user_id=user.id,
+        ip_address=ip,
+        user_agent=ua
+    )
+    db.add(login_record)
+    db.commit()
+    db.refresh(login_record)
 
     access_token = create_access_token(data={"user_id": user.id, "role_id": user.role_id})
     return {"access_token": access_token, "token_type": "bearer"}
