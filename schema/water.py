@@ -4,7 +4,6 @@ from datetime import datetime
 
 
 class WaterGoalBase(BaseModel):
-    user_id: int = Field(..., description="User ID")
     daily_ml: int = Field(..., gt=0, description="Daily water goal in milliliters")
 
 
@@ -23,12 +22,12 @@ class WaterGoalResponse(WaterGoalBase):
     model_config = ConfigDict(from_attributes=True)
     
     id: int
+    user_id: int
     created_at: datetime
     updated_at: datetime
 
 
 class WaterTrackingBase(BaseModel):
-    user_id: int = Field(..., description="User ID")
     water_intake: int = Field(..., ge=0, description="Water intake in milliliters")
 
 
@@ -40,7 +39,6 @@ class WaterTrackingCreate(WaterTrackingBase):
 class WaterTrackingUpdate(BaseModel):
     """Schema for updating an existing water tracking entry"""
     water_intake: Optional[int] = Field(None, ge=0, description="Water intake in milliliters")
-    deleted_at: Optional[datetime] = Field(None, description="Soft delete timestamp")
 
 
 class WaterTrackingResponse(WaterTrackingBase):
@@ -48,6 +46,7 @@ class WaterTrackingResponse(WaterTrackingBase):
     model_config = ConfigDict(from_attributes=True)
     
     id: int
+    user_id: int
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

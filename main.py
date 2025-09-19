@@ -6,6 +6,8 @@ from routers.user import user_router
 from routers.questionnaire import quest_router
 from routers.chat import chat_router
 from routers.tracking import tracking_router
+from routers.water import water_router
+from models.water import WaterGoal, WaterTracking
 from models.role import Role
 from models.user import User
 from models.questionnaire import UserQuestionnaire
@@ -367,6 +369,7 @@ app.include_router(user_router)
 app.include_router(quest_router)
 app.include_router(chat_router)
 app.include_router(tracking_router)
+app.include_router(water_router)
 
 # ✅ Health check endpoint
 @app.get("/health")
