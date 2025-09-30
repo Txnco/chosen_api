@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from decimal import Decimal
@@ -12,12 +12,11 @@ from models.day_rating import DayRating
 from schema.day_rating import DayRatingCreate, DayRatingUpdate, DayRatingResponse
 from models.progress_photos import ProgressPhoto, PhotoAngleEnum
 from schema.progress_photos import ProgressPhotoCreate, ProgressPhotoUpdate, ProgressPhotoResponse
-
-from models.user import User
+from functions.upload import upload_progress
 
 tracking_router = APIRouter(prefix="/tracking", tags=["Tracking"])
 
-
+# Weight Tracking Endpoints
 @tracking_router.get('/weight', response_model=List[WeightTrackingResponse])
 def get_weight(
     user_id: Optional[int] = Query(None, description="User ID (admin only)"),
@@ -42,28 +41,19 @@ def get_weight(
         WeightTracking.user_id == target_user_id,
         WeightTracking.deleted_at == None
     ).order_by(WeightTracking.created_at.desc()).all()
-    
+    # for w in weight_entries:
+    #     print(f"[Weight] id={w.id} user={w.user_id} date={w.date} weight={w.weight}")
+
     return weight_entries
 
 @tracking_router.post('/weight', response_model=WeightTrackingResponse)
 def save_weight(
-    weight: Decimal,
-    user_id: Optional[int] = None,
+    data: WeightTrackingCreate,
     current_user=Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
-    # Determine target user ID
-    if user_id is not None:
-        # Admin creating entry for another user
-        if current_user['role_id'] != 1:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admins can create entries for other users"
-            )
-        target_user_id = user_id
-    else:
-        # User creating their own entry
-        target_user_id = current_user['user_id']
+    # User creating their own entry
+    target_user_id = current_user['user_id']
     
     # Verify target user exists
     target_user = db.query(User).filter(
@@ -80,7 +70,8 @@ def save_weight(
     # Create weight tracking entry
     new_weight_entry = WeightTracking(
         user_id=target_user_id,
-        weight=weight
+        weight=data.weight,
+        date=data.date
     )
     
     db.add(new_weight_entry)
@@ -92,8 +83,7 @@ def save_weight(
 @tracking_router.put('/weight/{weight_id}', response_model=WeightTrackingResponse)
 def update_weight(
     weight_id: int,
-    weight: Decimal,
-    user_id: Optional[int] = None,
+    data: WeightTrackingUpdate,
     current_user=Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
@@ -122,13 +112,14 @@ def update_weight(
             )
     
     # Update the weight
-    weight_entry.weight = weight
+    weight_entry.weight = data.weight
     
     db.commit()
     db.refresh(weight_entry)
     
     return weight_entry
 
+# Day Rating Endpoints
 @tracking_router.get('/day-rating', response_model=List[DayRatingResponse])
 def get_day_rating(
     user_id: Optional[int] = Query(None, description="User ID (admin only)"),
@@ -157,24 +148,12 @@ def get_day_rating(
 
 @tracking_router.post('/day-rating', response_model=DayRatingResponse)
 def create_day_rating(
-    score: Optional[int] = None,
-    note: Optional[str] = None,
-    user_id: Optional[int] = None,
+    data: DayRatingCreate,
     current_user=Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
-    # Determine target user ID
-    if user_id is not None:
-        # Admin creating entry for another user
-        if current_user['role_id'] != 1:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admins can create entries for other users"
-            )
-        target_user_id = user_id
-    else:
-        # User creating their own entry
-        target_user_id = current_user['user_id']
+    # User creating their own entry
+    target_user_id = current_user['user_id']
     
     # Verify target user exists
     target_user = db.query(User).filter(
@@ -189,7 +168,7 @@ def create_day_rating(
         )
     
     # Validate score range
-    if score is not None and (score < 0 or score > 255):
+    if data.score is not None and (data.score < 0 or data.score > 255):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Score must be between 0 and 255"
@@ -198,8 +177,8 @@ def create_day_rating(
     # Create day rating entry
     new_day_rating = DayRating(
         user_id=target_user_id,
-        score=score,
-        note=note
+        score=data.score,
+        note=data.note
     )
     
     db.add(new_day_rating)
@@ -211,8 +190,7 @@ def create_day_rating(
 @tracking_router.put('/day-rating/{rating_id}', response_model=DayRatingResponse)
 def update_day_rating(
     rating_id: int,
-    score: Optional[int] = None,
-    note: Optional[str] = None,
+    data: DayRatingUpdate,
     current_user=Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
@@ -240,23 +218,24 @@ def update_day_rating(
             )
     
     # Validate score range if provided
-    if score is not None and (score < 0 or score > 255):
+    if data.score is not None and (data.score < 0 or data.score > 255):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Score must be between 0 and 255"
         )
     
     # Update the fields if provided
-    if score is not None:
-        day_rating.score = score
-    if note is not None:
-        day_rating.note = note
+    if data.score is not None:
+        day_rating.score = data.score
+    if data.note is not None:
+        day_rating.note = data.note
     
     db.commit()
     db.refresh(day_rating)
     
     return day_rating
 
+# Progress Photos Endpoints
 @tracking_router.get('/progress-photos', response_model=List[ProgressPhotoResponse])
 def get_progress_photos(
     user_id: Optional[int] = Query(None, description="User ID (admin only)"),
@@ -300,25 +279,14 @@ def get_progress_photos(
     return progress_photos
 
 @tracking_router.post('/progress-photos', response_model=ProgressPhotoResponse)
-def save_progress_photos(
-    angle: str,
-    image_url: str,
-    user_id: Optional[int] = None,
+def save_progress_photos_with_upload(
+    angle: str = Form(..., description="Photo angle (front, side, back)"),
+    file: UploadFile = File(..., description="Progress photo image"),
     current_user=Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
-    # Determine target user ID
-    if user_id is not None:
-        # Admin creating entry for another user
-        if current_user['role_id'] != 1:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admins can create entries for other users"
-            )
-        target_user_id = user_id
-    else:
-        # User creating their own entry
-        target_user_id = current_user['user_id']
+    # User creating their own entry
+    target_user_id = current_user['user_id']
     
     # Verify target user exists
     target_user = db.query(User).filter(
@@ -341,11 +309,16 @@ def save_progress_photos(
             detail="Invalid angle. Must be 'front', 'side', or 'back'"
         )
     
-    # Validate image_url length
-    if len(image_url) > 255:
+    # Upload the image
+    try:
+        filename = upload_progress(file)
+        image_url = f"https://admin.chosen-international.com/uploads/progress/{filename}"
+    except HTTPException as e:
+        raise e
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Image URL too long (max 255 characters)"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload image: {str(e)}"
         )
     
     # Create progress photo entry
@@ -361,11 +334,61 @@ def save_progress_photos(
     
     return new_progress_photo
 
+@tracking_router.post('/progress-photos/url', response_model=ProgressPhotoResponse)
+def save_progress_photos_with_url(
+    data: ProgressPhotoCreate,
+    current_user=Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """Alternative endpoint for saving progress photos with URL (for testing)"""
+    # User creating their own entry
+    target_user_id = current_user['user_id']
+    
+    # Verify target user exists
+    target_user = db.query(User).filter(
+        User.id == target_user_id,
+        User.deleted_at == None
+    ).first()
+    
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Validate angle enum
+    try:
+        angle_enum = PhotoAngleEnum(data.angle)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid angle. Must be 'front', 'side', or 'back'"
+        )
+    
+    # Validate image_url length
+    if len(data.image_url) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image URL too long (max 255 characters)"
+        )
+    
+    # Create progress photo entry
+    new_progress_photo = ProgressPhoto(
+        user_id=target_user_id,
+        angle=angle_enum,
+        image_url=data.image_url
+    )
+    
+    db.add(new_progress_photo)
+    db.commit()
+    db.refresh(new_progress_photo)
+    
+    return new_progress_photo
+
 @tracking_router.put('/progress-photos/{progress_id}', response_model=ProgressPhotoResponse)
 def update_progress_photos(
     progress_id: int,
-    angle: Optional[str] = None,
-    image_url: Optional[str] = None,
+    data: ProgressPhotoUpdate,
     current_user=Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
@@ -394,9 +417,9 @@ def update_progress_photos(
             )
     
     # Validate and update angle if provided
-    if angle is not None:
+    if data.angle is not None:
         try:
-            angle_enum = PhotoAngleEnum(angle)
+            angle_enum = PhotoAngleEnum(data.angle)
             progress_photo.angle = angle_enum
         except ValueError:
             raise HTTPException(
@@ -405,13 +428,13 @@ def update_progress_photos(
             )
     
     # Validate and update image_url if provided
-    if image_url is not None:
-        if len(image_url) > 255:
+    if data.image_url is not None:
+        if len(data.image_url) > 255:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Image URL too long (max 255 characters)"
             )
-        progress_photo.image_url = image_url
+        progress_photo.image_url = data.image_url
     
     db.commit()
     db.refresh(progress_photo)

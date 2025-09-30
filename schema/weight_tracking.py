@@ -1,30 +1,34 @@
-from pydantic import BaseModel, Field, ConfigDict
+from __future__ import annotations
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date as dt_date
 from decimal import Decimal
 
-
 class WeightTrackingBase(BaseModel):
-    user_id: int = Field(..., description="User ID")
-    weight: Decimal = Field(..., gt=0, description="Weight in kg")
-
+    weight: Decimal = Field(..., gt=0, le=1000, description="Weight in kg")
+    date: Optional[dt_date] = Field(
+        None,
+        description="Date for this weight entry (defaults to today if omitted)"
+    )
 
 class WeightTrackingCreate(WeightTrackingBase):
-    """Schema for creating a new weight tracking entry"""
-    pass
-
+    @model_validator(mode="before")
+    def default_date(cls, values):
+        if values.get("date") is None:
+            values["date"] = dt_date.today()
+        return values
 
 class WeightTrackingUpdate(BaseModel):
-    """Schema for updating an existing weight tracking entry"""
-    weight: Optional[Decimal] = Field(None, gt=0, description="Weight in kg")
-    deleted_at: Optional[datetime] = Field(None, description="Soft delete timestamp")
-
+    weight: Optional[Decimal] = Field(None, gt=0, le=1000, description="Weight in kg")
+    date: Optional[dt_date] = Field(
+        None,
+        description="Updated date for this weight entry"
+    )
 
 class WeightTrackingResponse(WeightTrackingBase):
-    """Schema for weight tracking response"""
     model_config = ConfigDict(from_attributes=True)
-    
     id: int
+    user_id: int
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

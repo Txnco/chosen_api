@@ -3,36 +3,34 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
-
 class PhotoAngleEnum(str, Enum):
     front = "front"
     side = "side"
     back = "back"
 
-
 class ProgressPhotoBase(BaseModel):
-    user_id: int = Field(..., description="User ID")
-    angle: PhotoAngleEnum = Field(..., description="Photo angle")
-    image_url: str = Field(..., max_length=255, description="URL to the progress photo")
-
+    angle: PhotoAngleEnum = Field(..., description="Photo angle (front, side, back)")
+    image_url: str = Field(..., max_length=255, description="URL of the progress photo")
 
 class ProgressPhotoCreate(ProgressPhotoBase):
-    """Schema for creating a new progress photo"""
+    """Schema for creating progress photo entry"""
     pass
 
-
 class ProgressPhotoUpdate(BaseModel):
-    """Schema for updating an existing progress photo"""
-    angle: Optional[PhotoAngleEnum] = Field(None, description="Photo angle")
-    image_url: Optional[str] = Field(None, max_length=255, description="URL to the progress photo")
-    deleted_at: Optional[datetime] = Field(None, description="Soft delete timestamp")
-
+    """Schema for updating progress photo entry"""
+    angle: Optional[PhotoAngleEnum] = Field(None, description="Photo angle (front, side, back)")
+    image_url: Optional[str] = Field(None, max_length=255, description="URL of the progress photo")
 
 class ProgressPhotoResponse(ProgressPhotoBase):
     """Schema for progress photo response"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int
+    user_id: int
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+
+class ProgressPhotoInDB(ProgressPhotoResponse):
+    """Schema for progress photo stored in database"""
+    pass
