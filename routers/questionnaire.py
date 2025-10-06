@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from auth.jwt import get_current_user
+from auth.jwt import get_current_user, require_admin
 from database import get_db
 from models.questionnaire import UserQuestionnaire
 from schema.questionnaire import QuestionnaireCreate, QuestionnaireResponse, QuestionnaireUpdate
@@ -89,3 +89,18 @@ def update_questionnaire(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update questionnaire: {str(e)}"
         )
+    
+# Add to routers/questionnaire.py
+
+@quest_router.get("/admin/user/{user_id}", response_model=Optional[QuestionnaireResponse])
+def get_user_questionnaire_admin(
+    user_id: int,
+    current_user: dict = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin: Get any user's questionnaire"""
+    questionnaire = db.query(UserQuestionnaire).filter(
+        UserQuestionnaire.user_id == user_id
+    ).first()
+    
+    return questionnaire

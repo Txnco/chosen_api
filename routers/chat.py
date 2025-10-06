@@ -7,7 +7,7 @@ from auth.jwt import get_current_user
 from models.user import User
 from models.chat import ChatMessage, ChatThread
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -19,6 +19,9 @@ class MessageCreate(BaseModel):
 
 class MarkReadRequest(BaseModel):
     message_ids: List[int]
+
+class ThreadCreate(BaseModel):
+    client_id: int
 
 @chat_router.post('/message')
 def send_message(
@@ -280,6 +283,126 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid role"
         )
+
+@chat_router.get('/available-clients')
+def get_available_clients(
+    search: Optional[str] = Query(None),
+    current_user=Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """Get list of clients that don't have an existing thread with the trainer"""
+    user_id = current_user['user_id']
+    user_role = current_user['role_id']
+    
+    # Only trainers/admins can access this
+    if user_role != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only trainers can access this endpoint"
+        )
+    
+    # Get all client IDs that already have threads with this trainer
+    existing_thread_clients = db.query(ChatThread.client_id).filter(
+        ChatThread.trainer_id == user_id,
+        ChatThread.deleted_at == None
+    ).all()
+    
+    existing_client_ids = [client_id for (client_id,) in existing_thread_clients]
+    
+    # Get all clients (role_id = 2) who don't have threads
+    query = db.query(User).filter(
+        User.role_id == 2,
+        User.deleted_at == None,
+        ~User.id.in_(existing_client_ids) if existing_client_ids else True
+    )
+    
+    # Apply search filter if provided
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            (User.first_name.ilike(search_term)) |
+            (User.last_name.ilike(search_term)) |
+            (User.email.ilike(search_term))
+        )
+    
+    available_clients = query.order_by(User.first_name, User.last_name).all()
+    
+    return [
+        {
+            "user_id": client.id,
+            "first_name": client.first_name,
+            "last_name": client.last_name,
+            "email": client.email,
+            "created_at": client.created_at
+        }
+        for client in available_clients
+    ]
+
+@chat_router.post('/threads')
+def create_thread(
+    thread_data: ThreadCreate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new chat thread with a client"""
+    user_id = current_user['user_id']
+    user_role = current_user['role_id']
+    
+    # Only trainers/admins can create threads
+    if user_role != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only trainers can create threads"
+        )
+    
+    # Verify the client exists and is a client (role_id = 2)
+    client = db.query(User).filter(
+        User.id == thread_data.client_id,
+        User.role_id == 2,
+        User.deleted_at == None
+    ).first()
+    
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Client not found"
+        )
+    
+    # Check if thread already exists
+    existing_thread = db.query(ChatThread).filter(
+        ChatThread.trainer_id == user_id,
+        ChatThread.client_id == thread_data.client_id,
+        ChatThread.deleted_at == None
+    ).first()
+    
+    if existing_thread:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thread already exists with this client"
+        )
+    
+    # Create new thread
+    new_thread = ChatThread(
+        trainer_id=user_id,
+        client_id=thread_data.client_id
+    )
+    
+    db.add(new_thread)
+    db.commit()
+    db.refresh(new_thread)
+    
+    return {
+        "id": new_thread.id,
+        "trainer_id": new_thread.trainer_id,
+        "client_id": new_thread.client_id,
+        "created_at": new_thread.created_at,
+        "updated_at": new_thread.updated_at,
+        "client_name": f"{client.first_name} {client.last_name}",
+        "last_message": None,
+        "last_message_at": None,
+        "has_unread_messages": False,
+        "unread_count": 0
+    }
 
 @chat_router.get('/unread-count')
 def get_total_unread_count(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
