@@ -9,3 +9,7 @@ __pycache__/
 *.log
 explained.md
 readme.md
+uploads/
+**/uploads/
+uploads/chat/
+**/uploads/chat/
