@@ -19,9 +19,7 @@ class ChatThread(Base):
     deleted_at = Column(DateTime, nullable=True)
 
     # Relationships
-    client = relationship("User", foreign_keys=[client_id])
-    trainer = relationship("User", foreign_keys=[trainer_id])
-    messages = relationship("ChatMessage", back_populates="thread")
+    messages = relationship("ChatMessage", back_populates="thread", cascade="all, delete-orphan")
 
 
 class ChatMessage(Base):
@@ -31,7 +29,7 @@ class ChatMessage(Base):
     thread_id = Column(Integer, ForeignKey("chat_threads.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     body = Column(Text, nullable=False)
-    image_url = Column(String(255), nullable=True)
+    image_url = Column(String(500), nullable=True)  # Store file URL here
     read_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.current_timestamp())
     updated_at = Column(
@@ -42,4 +40,3 @@ class ChatMessage(Base):
 
     # Relationships
     thread = relationship("ChatThread", back_populates="messages")
-    user = relationship("User", foreign_keys=[user_id])

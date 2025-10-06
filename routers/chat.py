@@ -9,8 +9,13 @@ from models.chat import ChatMessage, ChatThread
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+import os
+import uuid
+import shutil
 
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
+
+upload_dir = r"C:\Users\User1\Documents\Slaven Misevic\chosen_api\uploads\chat"
 
 # Pydantic models
 class MessageCreate(BaseModel):
@@ -444,33 +449,64 @@ async def upload_file(
 ):
     """Upload file for messages"""
     # Validate file type
-    allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'audio/mpeg', 'audio/wav']
+    allowed_types = [
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+        'audio/mpeg', 'audio/wav', 'audio/mp3',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ]
+    
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File type not allowed"
+            detail=f"File type {file.content_type} not allowed. Allowed types: images, audio, PDF, DOC"
         )
     
-    # Create upload directory if it doesn't exist
-    import os
-    upload_dir = "uploads/chat"
-    os.makedirs(upload_dir, exist_ok=True)
+    # Validate file size (10MB max)
+    max_size = 10 * 1024 * 1024  # 10MB
+    file.file.seek(0, 2)  # Seek to end
+    file_size = file.file.tell()  # Get position (file size)
+    file.file.seek(0)  # Reset to beginning
     
-    # Generate unique filename
-    import uuid
-    file_extension = file.filename.split('.')[-1] if file.filename else 'bin'
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    file_path = os.path.join(upload_dir, unique_filename)
+    if file_size > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File too large. Maximum size is 10MB"
+        )
     
-    # Save file
-    with open(file_path, "wb") as buffer:
-        import shutil
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        # Create upload directory if it doesn't exist
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Generate unique filename while preserving extension
+        file_extension = ''
+        if file.filename:
+            file_extension = os.path.splitext(file.filename)[1]
+        
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        file_path = os.path.join(upload_dir, unique_filename)
+        
+        # Save file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Return file info with proper URL
+        file_url = f"/uploads/chat/{unique_filename}"
+        
+        return {
+            "file_url": file_url,
+            "file_name": file.filename or unique_filename,
+            "file_size": file_size,
+            "content_type": file.content_type
+        }
     
-    # Return file info
-    return {
-        "file_url": f"/uploads/chat/{unique_filename}",
-        "file_name": file.filename,
-        "file_size": os.path.getsize(file_path),
-        "content_type": file.content_type
-    }
+    except Exception as e:
+        # Clean up file if something went wrong
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
+        )

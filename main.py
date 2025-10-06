@@ -24,6 +24,7 @@ from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 
+os.makedirs("public/uploads/chat", exist_ok=True)
 app = FastAPI(title="chosen-api", version="1.0.0")
 Base.metadata.create_all(bind=engine)
 
