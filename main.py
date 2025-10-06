@@ -21,10 +21,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 
-os.makedirs("public/uploads/chat", exist_ok=True)
+
+
 app = FastAPI(title="chosen-api", version="1.0.0")
 Base.metadata.create_all(bind=engine)
 
@@ -44,6 +46,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Mount static files directory for uploads
+uploads_dir = "uploads"
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # ✅ Create logs directory
 logs_dir = Path("logs")

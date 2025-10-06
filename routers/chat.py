@@ -13,6 +13,13 @@ import os
 import uuid
 import shutil
 
+from schema.chat import (
+    ChatThreadCreate,
+    ChatThreadResponse,
+    ChatMessageCreate,
+    ChatMessageResponse,
+)
+
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
 
 upload_dir = r"C:\Users\User1\Documents\Slaven Misevic\chosen_api\uploads\chat"
@@ -28,20 +35,16 @@ class MarkReadRequest(BaseModel):
 class ThreadCreate(BaseModel):
     client_id: int
 
-@chat_router.post('/message')
+@chat_router.post('/message', response_model=ChatMessageResponse)
 def send_message(
-    message_data: MessageCreate,
-    current_user=Depends(get_current_user), 
+    data: ChatMessageCreate,
+    current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Send a message in a thread"""
-    user_id = current_user['user_id']
-    thread_id = message_data.thread_id
-    body = message_data.body
-    
-    # Check if thread exists and user has access to it
+    # Verify thread exists and user has access
     thread = db.query(ChatThread).filter(
-        ChatThread.id == thread_id,
+        ChatThread.id == data.thread_id,
         ChatThread.deleted_at == None
     ).first()
     
@@ -51,26 +54,38 @@ def send_message(
             detail="Thread not found"
         )
     
-    # Check if user is part of this thread (either client or trainer)
-    if user_id != thread.client_id and user_id != thread.trainer_id:
+    # Check if user is part of this thread
+    if current_user['user_id'] not in [thread.client_id, thread.trainer_id]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have access to this thread"
         )
     
-    # Create new message
-    new_message = ChatMessage(
-        thread_id=thread_id,
-        user_id=user_id,
-        body=body,
-        read_at=None  # New messages start as unread
-    )
+    try:
+        # Create message
+        message = ChatMessage(
+            thread_id=data.thread_id,
+            user_id=current_user['user_id'],
+            body=data.body,
+            image_url=data.image_url  # Store the file URL
+        )
+        
+        db.add(message)
+        
+        # Update thread's updated_at
+        thread.updated_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(message)
+        
+        return message
     
-    db.add(new_message)
-    db.commit()
-    db.refresh(new_message)
-    
-    return new_message
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send message: {str(e)}"
+        )
 
 @chat_router.get('/threads/{thread_id}/messages')
 def get_thread_messages(

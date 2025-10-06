@@ -37,21 +37,25 @@ class ChatMessageBase(BaseModel):
     image_url: Optional[str] = Field(None, max_length=255, description="Image URL if message contains image")
 
 
-class ChatMessageCreate(ChatMessageBase):
-    """Schema for creating a new chat message"""
-    pass
-
 
 class ChatMessageUpdate(BaseModel):
     """Schema for updating an existing chat message"""
     body: Optional[str] = Field(None, max_length=65535, description="Message content")
     image_url: Optional[str] = Field(None, max_length=255, description="Image URL if message contains image")
 
+class ChatMessageCreate(BaseModel):
+    thread_id: int = Field(..., description="Thread ID")
+    body: str = Field(..., description="Message content")
+    image_url: Optional[str] = Field(None, description="File URL if message has attachment")
 
-class ChatMessageResponse(ChatMessageBase):
-    """Schema for chat message response"""
+class ChatMessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
     id: int
+    thread_id: int
+    user_id: int
+    body: str
+    image_url: Optional[str] = None
+    read_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
