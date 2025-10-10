@@ -5,8 +5,8 @@ from fastapi import HTTPException, UploadFile
 from PIL import Image
 import magic
 
-# UPLOAD_DIR = Path("/var/www/admin.chosen-international.com/public/uploads")
-UPLOAD_DIR = Path("C:/Users/User1/Documents/Slaven Misevic/public")
+UPLOAD_DIR = Path("/var/www/admin.chosen-international.com/public/uploads")
+# UPLOAD_DIR = Path("C:/Users/User1/Documents/Slaven Misevic/public")
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
