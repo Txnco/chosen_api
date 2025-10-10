@@ -1,16 +1,21 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from database import Base, engine
+
 from routers.auth import auth_router
 from routers.user import user_router
 from routers.questionnaire import quest_router
 from routers.chat import chat_router
 from routers.tracking import tracking_router
+from routers.event import event_router
 from routers.water import water_router
+
 from models.water import WaterGoal, WaterTracking
 from models.role import Role
 from models.user import User
+from models.event import Event, EventCopy
 from models.questionnaire import UserQuestionnaire
+
 from starlette.responses import StreamingResponse, FileResponse
 import logging
 import logging.handlers
@@ -379,6 +384,7 @@ app.include_router(quest_router)
 app.include_router(chat_router)
 app.include_router(tracking_router)
 app.include_router(water_router)
+app.include_router(event_router)
 
 # ✅ Health check endpoint
 @app.get("/health")

@@ -10,3 +10,4 @@ pydantic[email]
 python-multipart
 Pillow
 python-magic
+python-dateutil
