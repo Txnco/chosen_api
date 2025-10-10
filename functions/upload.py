@@ -3,10 +3,10 @@ import uuid
 from pathlib import Path
 from fastapi import HTTPException, UploadFile
 from PIL import Image
+from config import settings
 import magic
 
-UPLOAD_DIR = Path("/var/www/admin.chosen-international.com/public/uploads")
-# UPLOAD_DIR = Path("C:/Users/User1/Documents/Slaven Misevic/public")
+UPLOAD_URL = Path(settings.UPLOAD_URL)
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -59,7 +59,7 @@ def upload_profile_image(file: UploadFile) -> str:
         secure_filename = f"{uuid.uuid4().hex}{file_extension}"
         
         # 8. Ensure upload directory exists
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        UPLOAD_URL.mkdir(parents=True, exist_ok=True)
         
         # 9. Resize image if too large
         if image.size[0] > MAX_IMAGE_SIZE[0] or image.size[1] > MAX_IMAGE_SIZE[1]:
@@ -70,7 +70,7 @@ def upload_profile_image(file: UploadFile) -> str:
             image = image.convert("RGB")
         
         # 11. Save file
-        file_path = UPLOAD_DIR / "profile" /  secure_filename
+        file_path = UPLOAD_URL / "profile" /  secure_filename
         image.save(file_path, format="JPEG", quality=85, optimize=True)
         
         return secure_filename
@@ -130,7 +130,7 @@ def upload_progress(file: UploadFile) -> str:
         secure_filename = f"{uuid.uuid4().hex}{file_extension}"
         
         # 8. Ensure upload directory exists
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        UPLOAD_URL.mkdir(parents=True, exist_ok=True)
         
         # 9. Resize image if too large
         if image.size[0] > MAX_IMAGE_SIZE[0] or image.size[1] > MAX_IMAGE_SIZE[1]:
@@ -141,7 +141,7 @@ def upload_progress(file: UploadFile) -> str:
             image = image.convert("RGB")
         
         # 11. Save file
-        file_path = UPLOAD_DIR / "progress" /  secure_filename
+        file_path = UPLOAD_URL / "progress" /  secure_filename
         image.save(file_path, format="JPEG", quality=85, optimize=True)
         
         return secure_filename
