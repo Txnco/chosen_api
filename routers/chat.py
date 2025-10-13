@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Form
 from fastapi import UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from database import get_db
 from auth.jwt import get_current_user
 from models.user import User
@@ -10,8 +10,10 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 import os
+from pathlib import Path
 import uuid
 import shutil
+from config import settings
 
 from schema.chat import (
     ChatThreadCreate,
@@ -22,7 +24,7 @@ from schema.chat import (
 
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
 
-upload_dir = r"C:\Users\User1\Documents\Slaven Misevic\chosen_api\uploads\chat"
+upload_dir = Path(settings.UPLOAD_URL) / "uploads" / "chat"
 
 # Pydantic models
 class MessageCreate(BaseModel):
@@ -35,16 +37,10 @@ class MarkReadRequest(BaseModel):
 class ThreadCreate(BaseModel):
     client_id: int
 
-@chat_router.post('/message', response_model=ChatMessageResponse)
-def send_message(
-    data: ChatMessageCreate,
-    current_user=Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Send a message in a thread"""
-    # Verify thread exists and user has access
+def verify_thread_access(thread_id: int, user_id: int, user_role: int, db: Session):
+    """Verify thread exists, user has access, and both parties are not deleted"""
     thread = db.query(ChatThread).filter(
-        ChatThread.id == data.thread_id,
+        ChatThread.id == thread_id,
         ChatThread.deleted_at == None
     ).first()
     
@@ -54,20 +50,52 @@ def send_message(
             detail="Thread not found"
         )
     
-    # Check if user is part of this thread
-    if current_user['user_id'] not in [thread.client_id, thread.trainer_id]:
+    # Verify both users in the thread are not deleted
+    client = db.query(User).filter(
+        User.id == thread.client_id,
+        User.deleted_at == None
+    ).first()
+    
+    trainer = db.query(User).filter(
+        User.id == thread.trainer_id,
+        User.deleted_at == None
+    ).first()
+    
+    if not client or not trainer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread participants no longer available"
+        )
+    
+    # Verify user has access to this thread
+    if user_id not in [thread.client_id, thread.trainer_id]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have access to this thread"
         )
     
+    return thread, client, trainer
+
+@chat_router.post('/message', response_model=ChatMessageResponse)
+def send_message(
+    data: ChatMessageCreate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Send a message in a thread"""
+    user_id = current_user['user_id']
+    user_role = current_user['role_id']
+    
+    # Verify thread access and user validity
+    thread, client, trainer = verify_thread_access(data.thread_id, user_id, user_role, db)
+    
     try:
-        # Create message
+        # Create message (store only filename, not full path)
         message = ChatMessage(
             thread_id=data.thread_id,
-            user_id=current_user['user_id'],
+            user_id=user_id,
             body=data.body,
-            image_url=data.image_url  # Store the file URL
+            image_url=data.image_url  # This should be just the filename now
         )
         
         db.add(message)
@@ -97,25 +125,10 @@ def get_thread_messages(
 ):
     """Get messages for a specific thread with pagination"""
     user_id = current_user['user_id']
+    user_role = current_user['role_id']
     
-    # Check if user has access to this thread
-    thread = db.query(ChatThread).filter(
-        ChatThread.id == thread_id,
-        ChatThread.deleted_at == None
-    ).first()
-    
-    if not thread:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Thread not found"
-        )
-    
-    # Check access
-    if user_id != thread.client_id and user_id != thread.trainer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+    # Verify thread access and user validity
+    thread, client, trainer = verify_thread_access(thread_id, user_id, user_role, db)
     
     # Get messages with pagination
     offset = (page - 1) * limit
@@ -141,8 +154,23 @@ def get_thread_messages(
     # Get total count for pagination info
     total = db.query(ChatMessage).filter(ChatMessage.thread_id == thread_id).count()
     
+    # Convert messages to dict and add full file URLs
+    messages_with_urls = []
+    for message in messages:
+        message_dict = {
+            "id": message.id,
+            "thread_id": message.thread_id,
+            "user_id": message.user_id,
+            "body": message.body,
+            "image_url": f"/uploads/chat/{thread_id}/{message.image_url}" if message.image_url else None,
+            "read_at": message.read_at,
+            "created_at": message.created_at,
+            "updated_at": message.updated_at
+        }
+        messages_with_urls.append(message_dict)
+    
     return {
-        "messages": messages,
+        "messages": messages_with_urls,
         "pagination": {
             "page": page,
             "limit": limit,
@@ -160,18 +188,10 @@ def mark_messages_read(
 ):
     """Mark specific messages as read"""
     user_id = current_user['user_id']
+    user_role = current_user['role_id']
     
-    # Check thread access
-    thread = db.query(ChatThread).filter(
-        ChatThread.id == thread_id,
-        ChatThread.deleted_at == None
-    ).first()
-    
-    if not thread or (user_id != thread.client_id and user_id != thread.trainer_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+    # Verify thread access and user validity
+    thread, client, trainer = verify_thread_access(thread_id, user_id, user_role, db)
     
     # Mark messages as read (only messages from other users)
     messages_updated = db.query(ChatMessage).filter(
@@ -194,23 +214,36 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
     user_id = current_user['user_id']
     
     if user_role == 2:  # Client role
-        thread = db.query(ChatThread).filter(
+        # Only get threads where both client and trainer are not deleted
+        thread = db.query(ChatThread).join(
+            User, User.id == ChatThread.trainer_id
+        ).filter(
             ChatThread.client_id == user_id,
-            ChatThread.deleted_at == None
+            ChatThread.deleted_at == None,
+            User.deleted_at == None  # Trainer must not be deleted
         ).first()
         
         if not thread:
-            # Create new thread with hardcoded trainer_id=1
+            # Find an active trainer (not deleted, role_id = 1)
+            trainer = db.query(User).filter(
+                User.role_id == 1,
+                User.deleted_at == None
+            ).first()
+            
+            if not trainer:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="No active trainer available"
+                )
+            
+            # Create new thread with active trainer
             new_thread = ChatThread(
                 client_id=user_id,
-                trainer_id=1
+                trainer_id=trainer.id
             )
             db.add(new_thread)
             db.commit()
             db.refresh(new_thread)
-            
-            # Get trainer info
-            trainer = db.query(User).filter(User.id == 1).first()
             
             return [{
                 "id": new_thread.id,
@@ -220,13 +253,22 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
                 "updated_at": new_thread.updated_at,
                 "last_message": None,
                 "last_message_at": None,
-                "trainer_name": f"{trainer.first_name} {trainer.last_name}" if trainer else "Trainer",
+                "trainer_name": f"{trainer.first_name} {trainer.last_name}",
                 "has_unread_messages": False,
                 "unread_count": 0
             }]
         
         # Get trainer info
-        trainer = db.query(User).filter(User.id == thread.trainer_id).first()
+        trainer = db.query(User).filter(
+            User.id == thread.trainer_id,
+            User.deleted_at == None
+        ).first()
+        
+        if not trainer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Trainer no longer available"
+            )
         
         # Get last message
         last_message = db.query(ChatMessage).filter(
@@ -250,16 +292,19 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
             "updated_at": thread.updated_at,
             "last_message": last_message.body if last_message else None,
             "last_message_at": last_message.created_at if last_message else None,
-            "trainer_name": f"{trainer.first_name} {trainer.last_name}" if trainer else "Trainer",
+            "trainer_name": f"{trainer.first_name} {trainer.last_name}",
             "has_unread_messages": unread_count > 0,
             "unread_count": unread_count
         }]
     
     elif user_role == 1:  # Admin/Trainer role
-        # Get threads with last message info
-        threads = db.query(ChatThread).filter(
+        # Get threads where both trainer and client are not deleted
+        threads = db.query(ChatThread).join(
+            User, User.id == ChatThread.client_id
+        ).filter(
             ChatThread.trainer_id == user_id,
-            ChatThread.deleted_at == None
+            ChatThread.deleted_at == None,
+            User.deleted_at == None  # Client must not be deleted
         ).all()
         
         # Enhance each thread with last message info
@@ -270,8 +315,15 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
                 ChatMessage.thread_id == thread.id
             ).order_by(ChatMessage.created_at.desc()).first()
             
-            # Get client info
-            client = db.query(User).filter(User.id == thread.client_id).first()
+            # Get client info (already verified not deleted in query)
+            client = db.query(User).filter(
+                User.id == thread.client_id,
+                User.deleted_at == None
+            ).first()
+            
+            # Skip if client was deleted (additional safety check)
+            if not client:
+                continue
             
             # Count unread messages from client
             unread_count = db.query(ChatMessage).filter(
@@ -290,7 +342,7 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
                 "updated_at": thread.updated_at,
                 "last_message": last_message.body if last_message else None,
                 "last_message_at": last_message.created_at if last_message else None,
-                "client_name": f"{client.first_name} {client.last_name}" if client else None,
+                "client_name": f"{client.first_name} {client.last_name}",
                 "has_unread_messages": unread_count > 0,
                 "unread_count": unread_count
             }
@@ -329,10 +381,10 @@ def get_available_clients(
     
     existing_client_ids = [client_id for (client_id,) in existing_thread_clients]
     
-    # Get all clients (role_id = 2) who don't have threads
+    # Get all clients (role_id = 2) who don't have threads and are not deleted
     query = db.query(User).filter(
         User.role_id == 2,
-        User.deleted_at == None,
+        User.deleted_at == None,  # Only active clients
         ~User.id.in_(existing_client_ids) if existing_client_ids else True
     )
     
@@ -340,9 +392,11 @@ def get_available_clients(
     if search:
         search_term = f"%{search}%"
         query = query.filter(
-            (User.first_name.ilike(search_term)) |
-            (User.last_name.ilike(search_term)) |
-            (User.email.ilike(search_term))
+            or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.email.ilike(search_term)
+            )
         )
     
     available_clients = query.order_by(User.first_name, User.last_name).all()
@@ -375,7 +429,7 @@ def create_thread(
             detail="Only trainers can create threads"
         )
     
-    # Verify the client exists and is a client (role_id = 2)
+    # Verify the client exists, is a client (role_id = 2), and is not deleted
     client = db.query(User).filter(
         User.id == thread_data.client_id,
         User.role_id == 2,
@@ -385,7 +439,7 @@ def create_thread(
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Client not found"
+            detail="Client not found or inactive"
         )
     
     # Check if thread already exists
@@ -432,23 +486,35 @@ def get_total_unread_count(current_user=Depends(get_current_user), db: Session =
     
     if user_role == 2:  # Client
         # Count unread messages from trainer in client's thread
-        unread_count = db.query(ChatMessage).join(ChatThread).filter(
+        # Only count if trainer is not deleted
+        unread_count = db.query(ChatMessage).join(
+            ChatThread, ChatMessage.thread_id == ChatThread.id
+        ).join(
+            User, User.id == ChatThread.trainer_id
+        ).filter(
             and_(
                 ChatThread.client_id == user_id,
                 ChatMessage.user_id == ChatThread.trainer_id,  # Messages from trainer
                 ChatMessage.read_at == None,
-                ChatThread.deleted_at == None
+                ChatThread.deleted_at == None,
+                User.deleted_at == None  # Trainer not deleted
             )
         ).count()
     
     elif user_role == 1:  # Trainer
         # Count unread messages from all clients in trainer's threads
-        unread_count = db.query(ChatMessage).join(ChatThread).filter(
+        # Only count if client is not deleted
+        unread_count = db.query(ChatMessage).join(
+            ChatThread, ChatMessage.thread_id == ChatThread.id
+        ).join(
+            User, User.id == ChatThread.client_id
+        ).filter(
             and_(
                 ChatThread.trainer_id == user_id,
                 ChatMessage.user_id == ChatThread.client_id,  # Messages from clients
                 ChatMessage.read_at == None,
-                ChatThread.deleted_at == None
+                ChatThread.deleted_at == None,
+                User.deleted_at == None  # Client not deleted
             )
         ).count()
     
@@ -459,14 +525,22 @@ def get_total_unread_count(current_user=Depends(get_current_user), db: Session =
 
 @chat_router.post('/upload')
 async def upload_file(
+    thread_id: int = Form(...),
     file: UploadFile = File(...),
-    current_user=Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Upload file for messages"""
+    """Upload file for messages organized by thread"""
+    user_id = current_user['user_id']
+    user_role = current_user['role_id']
+    
+    # Verify thread access and user validity
+    thread, client, trainer = verify_thread_access(thread_id, user_id, user_role, db)
+    
     # Validate file type
     allowed_types = [
         'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
-        'audio/mpeg', 'audio/wav', 'audio/mp3',
+        'audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/ogg',
         'application/pdf',
         'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -490,9 +564,11 @@ async def upload_file(
             detail="File too large. Maximum size is 10MB"
         )
     
+    file_path = None
     try:
-        # Create upload directory if it doesn't exist
-        os.makedirs(upload_dir, exist_ok=True)
+        # Create thread-specific upload directory
+        thread_upload_dir = upload_dir / str(thread_id)
+        os.makedirs(thread_upload_dir, exist_ok=True)
         
         # Generate unique filename while preserving extension
         file_extension = ''
@@ -500,28 +576,63 @@ async def upload_file(
             file_extension = os.path.splitext(file.filename)[1]
         
         unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(upload_dir, unique_filename)
+        file_path = thread_upload_dir / unique_filename
         
         # Save file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Return file info with proper URL
-        file_url = f"/uploads/chat/{unique_filename}"
-        
+        # Return ONLY the filename to be stored in DB
+        # The full path will be constructed when retrieving messages
         return {
-            "file_url": file_url,
-            "file_name": file.filename or unique_filename,
+            "file_name": unique_filename,  # Store this in DB
+            "file_url": f"/uploads/chat/{thread_id}/{unique_filename}",  # For immediate use
+            "original_name": file.filename,
             "file_size": file_size,
             "content_type": file.content_type
         }
     
     except Exception as e:
         # Clean up file if something went wrong
-        if os.path.exists(file_path):
+        if file_path and os.path.exists(file_path):
             os.remove(file_path)
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload file: {str(e)}"
         )
+
+@chat_router.delete('/threads/{thread_id}')
+def delete_thread(
+    thread_id: int,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Soft delete a thread (admin/trainer only)"""
+    user_id = current_user['user_id']
+    user_role = current_user['role_id']
+    
+    # Only trainers/admins can delete threads
+    if user_role != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only trainers can delete threads"
+        )
+    
+    thread = db.query(ChatThread).filter(
+        ChatThread.id == thread_id,
+        ChatThread.trainer_id == user_id,
+        ChatThread.deleted_at == None
+    ).first()
+    
+    if not thread:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found"
+        )
+    
+    # Soft delete
+    thread.deleted_at = datetime.utcnow()
+    db.commit()
+    
+    return {"message": "Thread deleted successfully"}

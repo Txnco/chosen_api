@@ -70,7 +70,7 @@ def upload_profile_image(file: UploadFile) -> str:
             image = image.convert("RGB")
         
         # 11. Save file
-        file_path = UPLOAD_URL / "profile" /  secure_filename
+        file_path = UPLOAD_URL / "uploads" / "profile" /  secure_filename
         image.save(file_path, format="JPEG", quality=85, optimize=True)
         
         return secure_filename
@@ -141,7 +141,7 @@ def upload_progress(file: UploadFile) -> str:
             image = image.convert("RGB")
         
         # 11. Save file
-        file_path = UPLOAD_URL / "progress" /  secure_filename
+        file_path = UPLOAD_URL / "uploads" / "progress" /  secure_filename
         image.save(file_path, format="JPEG", quality=85, optimize=True)
         
         return secure_filename
