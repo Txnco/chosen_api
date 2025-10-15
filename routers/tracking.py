@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from decimal import Decimal
-
+from datetime import date
 from database import get_db
 from auth.jwt import get_current_user
 from models.user import User
+from sqlalchemy import func
 from models.weight_tracking import WeightTracking
 from schema.weight_tracking import WeightTrackingCreate, WeightTrackingUpdate, WeightTrackingResponse
 from models.day_rating import DayRating
@@ -40,9 +41,10 @@ def get_weight(
     weight_entries = db.query(WeightTracking).filter(
         WeightTracking.user_id == target_user_id,
         WeightTracking.deleted_at == None
-    ).order_by(WeightTracking.created_at.desc()).all()
-    # for w in weight_entries:
-    #     print(f"[Weight] id={w.id} user={w.user_id} date={w.date} weight={w.weight}")
+    ).order_by(
+        WeightTracking.date.desc().nullslast(),  # Sort by date first (nulls last)
+        WeightTracking.created_at.desc()          # Then by created_at
+    ).all()
 
     return weight_entries
 
@@ -167,6 +169,18 @@ def create_day_rating(
             detail="User not found"
         )
     
+    today = date.today()
+    existing_rating = db.query(DayRating).filter(
+        DayRating.user_id == target_user_id,
+        func.date(DayRating.created_at) == today
+    ).first()
+
+    if existing_rating:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already rated today. You can edit your existing rating instead."
+        )
+        
     # Validate score range
     if data.score is not None and (data.score < 0 or data.score > 255):
         raise HTTPException(
@@ -312,7 +326,7 @@ def save_progress_photos_with_upload(
     # Upload the image
     try:
         filename = upload_progress(file)
-        image_url = f"https://admin.chosen-international.com/uploads/progress/{filename}"
+        image_url = f"{filename}"
     except HTTPException as e:
         raise e
     except Exception as e:
