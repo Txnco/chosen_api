@@ -42,10 +42,10 @@ def get_weight(
         WeightTracking.user_id == target_user_id,
         WeightTracking.deleted_at == None
     ).order_by(
-        WeightTracking.date.desc().nullslast(),  # Sort by date first (nulls last)
+        WeightTracking.date.is_(None),            # Push NULL dates to the end
+        WeightTracking.date.desc(),               # Sort by date descending
         WeightTracking.created_at.desc()          # Then by created_at
     ).all()
-
     return weight_entries
 
 @tracking_router.post('/weight', response_model=WeightTrackingResponse)
