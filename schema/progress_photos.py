@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict, computed_field
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -29,17 +29,15 @@ class ProgressPhotoResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     
-    @computed_field
-    @property
-    def image_url(self) -> str:
+    @field_serializer('image_url')
+    def serialize_image_url(self, image_url: str) -> str:
         # If image_url already contains http, return as is (backward compatibility)
-        if self.image_url and (self.image_url.startswith('http://') or self.image_url.startswith('https://')):
-            return self.image_url
+        if image_url and (image_url.startswith('http://') or image_url.startswith('https://')):
+            return image_url
         # Otherwise, construct the full URL
-        return f"https://admin.chosen-international.com/public/uploads/progress/{self.image_url}"
+        return f"https://admin.chosen-international.com/public/uploads/progress/{image_url}"
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ProgressPhotoInDB(ProgressPhotoResponse):
     """Schema for progress photo stored in database"""
