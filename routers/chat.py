@@ -236,6 +236,12 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
                     detail="No active trainer available"
                 )
             
+            # Get client info for profile picture
+            client = db.query(User).filter(
+                User.id == user_id,
+                User.deleted_at == None
+            ).first()
+            
             # Create new thread with active trainer
             new_thread = ChatThread(
                 client_id=user_id,
@@ -254,6 +260,8 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
                 "last_message": None,
                 "last_message_at": None,
                 "trainer_name": f"{trainer.first_name} {trainer.last_name}",
+                "trainer_avatar": trainer.profile_picture,
+                "client_avatar": client.profile_picture if client else None,
                 "has_unread_messages": False,
                 "unread_count": 0
             }]
@@ -269,6 +277,12 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Trainer no longer available"
             )
+        
+        # Get client info for profile picture
+        client = db.query(User).filter(
+            User.id == user_id,
+            User.deleted_at == None
+        ).first()
         
         # Get last message
         last_message = db.query(ChatMessage).filter(
@@ -293,6 +307,8 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
             "last_message": last_message.body if last_message else None,
             "last_message_at": last_message.created_at if last_message else None,
             "trainer_name": f"{trainer.first_name} {trainer.last_name}",
+            "trainer_avatar": trainer.profile_picture,
+            "client_avatar": client.profile_picture if client else None,
             "has_unread_messages": unread_count > 0,
             "unread_count": unread_count
         }]
@@ -306,6 +322,12 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
             ChatThread.deleted_at == None,
             User.deleted_at == None  # Client must not be deleted
         ).all()
+        
+        # Get trainer info for profile picture
+        trainer = db.query(User).filter(
+            User.id == user_id,
+            User.deleted_at == None
+        ).first()
         
         # Enhance each thread with last message info
         enhanced_threads = []
@@ -343,6 +365,8 @@ def list_threads_enhanced(current_user=Depends(get_current_user), db: Session = 
                 "last_message": last_message.body if last_message else None,
                 "last_message_at": last_message.created_at if last_message else None,
                 "client_name": f"{client.first_name} {client.last_name}",
+                "client_avatar": client.profile_picture,
+                "trainer_avatar": trainer.profile_picture if trainer else None,
                 "has_unread_messages": unread_count > 0,
                 "unread_count": unread_count
             }
