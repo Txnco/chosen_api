@@ -1,10 +1,4 @@
 
-"""
-==============================================================================
-File 3 of 3: routers/motivational_quote.py
-Copy this entire file to your routers folder
-==============================================================================
-"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -32,19 +26,38 @@ def get_random_quote(
     db: Session = Depends(get_db)
 ):
     """
-    Get a random motivational quote with intelligent selection:
+    Get the daily motivational quote:
+    - Returns the same quote for all users throughout the day (UTC-based)
+    - Selects a new quote at midnight UTC
     - Prioritizes quotes that haven't been shown recently
     - Prioritizes quotes with fewer total views
     - Only returns active, non-deleted quotes
     """
     
-    # Get current time for comparison
+    # Get current UTC date (without time)
     now = datetime.utcnow()
+    today = now.date()
     
-    # Calculate a 'weight' for each quote based on:
-    # 1. How long ago it was shown (older = higher weight)
-    # 2. How many times it's been shown (less shown = higher weight)
+    # Check if there's a quote already selected for today
+    # We'll use a simple approach: check if any quote was last_shown_at today
+    todays_quote = db.query(MotivationalQuote).filter(
+        and_(
+            MotivationalQuote.is_active == True,
+            MotivationalQuote.deleted_at == None,
+            func.date(MotivationalQuote.last_shown_at) == today
+        )
+    ).first()
     
+    if todays_quote:
+        # Return the already selected quote for today
+        return RandomQuoteResponse(
+            id=todays_quote.id,
+            quote=todays_quote.quote,
+            author=todays_quote.author,
+            times_shown=todays_quote.times_shown
+        )
+    
+    # No quote selected for today yet, select a new one
     quotes = db.query(MotivationalQuote).filter(
         and_(
             MotivationalQuote.is_active == True,
@@ -96,7 +109,7 @@ def get_random_quote(
         # Select quote using weighted random
         selected_quote = random.choices(quotes, weights=weights, k=1)[0]
     
-    # Update the selected quote's stats
+    # Update the selected quote's stats for today
     selected_quote.times_shown += 1
     selected_quote.last_shown_at = now
     db.commit()
