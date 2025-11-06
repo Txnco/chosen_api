@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from database import Base
 from sqlalchemy.sql import func
@@ -16,6 +16,7 @@ class User(Base):
     profile_picture = Column(String(255), nullable=False)
     reset_token = Column(String(255), nullable=True)
     reset_token_expires_at = Column(DateTime, nullable=True)
+    notification_preferences = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=func.current_timestamp())
     updated_at = Column(
         DateTime, 
