@@ -10,6 +10,7 @@ from routers.tracking import tracking_router
 from routers.event import event_router
 from routers.water import water_router
 from routers.motivational_quote import quote_router
+from routers.notification import notification_router
 
 from models.water import WaterGoal, WaterTracking
 from models.role import Role
@@ -387,6 +388,7 @@ app.include_router(tracking_router)
 app.include_router(water_router)
 app.include_router(event_router)
 app.include_router(quote_router)
+app.include_router(notification_router)
 
 # ✅ Health check endpoint
 @app.get("/health")

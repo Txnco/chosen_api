@@ -12,6 +12,7 @@ from database import get_db
 from typing import Optional
 from models.user_login import UserLogin
 from functions.upload import upload_profile_image
+from schema.notification import get_default_notification_preferences
 
 
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -60,7 +61,8 @@ def register(
         first_name=first_name,
         last_name=last_name,
         role_id=2,
-        profile_picture=profile_picture_filename
+        profile_picture=profile_picture_filename,
+        notification_preferences=get_default_notification_preferences()
     )
     db.add(new_user)
     db.commit()
