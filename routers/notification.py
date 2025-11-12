@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified 
 from typing import Dict, Any
 from auth.jwt import get_current_user
 from database import get_db
@@ -85,6 +86,10 @@ def update_notification_preferences(
     
     # Save to database
     user.notification_preferences = current_prefs
+    
+    # ⚠️ THIS IS THE KEY FIX - Tell SQLAlchemy the JSON column was modified
+    flag_modified(user, "notification_preferences")
+    
     db.commit()
     db.refresh(user)
     
