@@ -1,78 +1,64 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional
+# schema/event.py
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
-from enum import Enum
-
-
-class RepeatTypeEnum(str, Enum):
-    none = "none"
-    daily = "daily"
-    weekly = "weekly"
-    monthly = "monthly"
-    yearly = "yearly"
-
-
-class EventBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=255, description="Event title")
-    description: Optional[str] = Field(None, max_length=5000, description="Event description")
-    start_time: datetime = Field(..., description="Event start time (UTC)")
-    end_time: datetime = Field(..., description="Event end time (UTC)")
-    all_day: bool = Field(default=False, description="Whether event is all-day")
-    repeat_type: RepeatTypeEnum = Field(default=RepeatTypeEnum.none, description="Repeat frequency")
-    repeat_until: Optional[datetime] = Field(None, description="End date for repeating events")
+from typing import Optional, List
+from models.event import RepeatTypeEnum, RepeatEndTypeEnum, ExceptionTypeEnum
 
 
 class EventCreate(BaseModel):
     user_id: int
-    title: str
-    description: Optional[str] = ""
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
     start_time: datetime
     end_time: datetime
     all_day: bool = False
     repeat_type: RepeatTypeEnum = RepeatTypeEnum.none
+    repeat_interval: int = Field(default=1, ge=1)
+    repeat_days: Optional[str] = None
     repeat_until: Optional[datetime] = None
-
-    @field_validator('repeat_until', mode='before')
-    @classmethod
-    def empty_string_to_none(cls, v):
-        if v == "" or v is None:
-            return None
-        return v
-
-    @field_validator('end_time')
-    @classmethod
-    def validate_end_time(cls, v, info):
-        if 'start_time' in info.data and v <= info.data['start_time']:
-            raise ValueError('End time must be after start time')
-        return v
+    repeat_end_type: RepeatEndTypeEnum = RepeatEndTypeEnum.never
+    repeat_count: Optional[int] = Field(default=None, ge=1)
 
 
 class EventUpdate(BaseModel):
-    """Schema for updating an existing event - all fields optional"""
-    title: Optional[str] = Field(None, min_length=1, max_length=255, description="Event title")
-    description: Optional[str] = Field(None, max_length=5000, description="Event description")
-    start_time: Optional[datetime] = Field(None, description="Event start time (UTC)")
-    end_time: Optional[datetime] = Field(None, description="Event end time (UTC)")
-    all_day: Optional[bool] = Field(None, description="Whether event is all-day")
-    repeat_type: Optional[RepeatTypeEnum] = Field(None, description="Repeat frequency")
-    repeat_until: Optional[datetime] = Field(None, description="End date for repeating events")
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    all_day: Optional[bool] = None
+    repeat_type: Optional[RepeatTypeEnum] = None
+    repeat_interval: Optional[int] = Field(None, ge=1)
+    repeat_days: Optional[str] = None
+    repeat_until: Optional[datetime] = None
+    repeat_end_type: Optional[RepeatEndTypeEnum] = None
+    repeat_count: Optional[int] = Field(None, ge=1)
 
 
-class EventResponse(EventBase):
-    """Schema for event response"""
-    model_config = ConfigDict(from_attributes=True)
-    
+class EventResponse(BaseModel):
     id: int
     user_id: int
+    parent_event_id: Optional[int] = None
+    title: str
+    description: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+    all_day: bool
+    repeat_type: str
+    repeat_interval: int
+    repeat_days: Optional[str] = None
+    repeat_until: Optional[datetime] = None
+    repeat_end_type: str
+    repeat_count: Optional[int] = None
     created_by: int
     created_at: datetime
     updated_at: datetime
-    is_repeat_instance: Optional[bool] = None  # Add this field
-    original_start: Optional[datetime] = None  # Add this field
+    is_repeat_instance: Optional[bool] = None
+    original_start: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EventWithUser(EventResponse):
-    """Schema for event with user details"""
     user_first_name: Optional[str] = None
     user_last_name: Optional[str] = None
     user_email: Optional[str] = None
@@ -81,38 +67,36 @@ class EventWithUser(EventResponse):
 
 
 class EventCopyCreate(BaseModel):
-    """Schema for copying an event"""
-    target_user_id: int = Field(..., description="User ID to copy event to")
-    target_date: datetime = Field(..., description="Date to copy event to")
+    target_user_id: int
+    target_date: datetime
 
 
 class EventCopyResponse(BaseModel):
-    """Schema for event copy response"""
-    model_config = ConfigDict(from_attributes=True)
-    
     id: int
     event_id: int
     user_id: int
     date: datetime
     created_at: datetime
 
-
-
-
-class EventListQuery(BaseModel):
-    """Schema for event list query parameters"""
-    user_id: Optional[int] = Field(None, description="Filter by user ID")
-    start_date: Optional[datetime] = Field(None, description="Filter events starting from this date")
-    end_date: Optional[datetime] = Field(None, description="Filter events until this date")
-    include_repeating: bool = Field(default=True, description="Include repeating event instances")
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EventBulkCopyCreate(BaseModel):
-    """Schema for copying event to multiple users/dates"""
-    target_user_ids: list[int] = Field(..., min_length=1, description="List of user IDs to copy to")
-    target_dates: list[datetime] = Field(..., min_length=1, description="List of dates to copy to")
+    target_user_ids: List[int]
+    target_dates: List[datetime]
 
 
-class EventInDB(EventResponse):
-    """Schema for event stored in database"""
-    pass
+class EventExceptionResponse(BaseModel):
+    id: int
+    event_id: int
+    exception_date: datetime
+    exception_type: str
+    modified_event_id: Optional[int] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EventEditScope(BaseModel):
+    scope: str = Field(..., pattern="^(this|future|all)$")
+    occurrence_date: Optional[datetime] = None
