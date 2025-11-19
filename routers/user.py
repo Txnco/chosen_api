@@ -61,7 +61,7 @@ def get_current_user(current_user=Depends(get_current_user), db: Session = Depen
         "email": user.email,
         "profile_picture": user.profile_picture,
         "needs_questionnaire_update": needs_questionnaire_update,
-        "birthdate" : questionnaire.birthday,
+        "birthdate" : questionnaire.birthday if questionnaire else None,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
