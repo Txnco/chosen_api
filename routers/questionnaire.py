@@ -1,3 +1,4 @@
+# routers/questionnaire.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from auth.jwt import get_current_user, require_admin
@@ -15,7 +16,11 @@ def upsert_questionnaire(
     db: Session = Depends(get_db),
 ):
     user_id = current_user["user_id"]
-    payload = data.model_dump(exclude_unset=True)  # only provided fields
+    payload = data.model_dump(exclude_unset=True)
+    
+    # Convert work_shifts to dict format for JSON storage
+    if "work_shifts" in payload and payload["work_shifts"]:
+        payload["work_shifts"] = [shift.model_dump() if hasattr(shift, 'model_dump') else shift for shift in payload["work_shifts"]]
 
     existing = (
         db.query(UserQuestionnaire)
@@ -25,14 +30,12 @@ def upsert_questionnaire(
 
     try:
         if existing:
-            # update existing
             for field, value in payload.items():
                 setattr(existing, field, value)
             db.commit()
             db.refresh(existing)
             return existing
         else:
-            # create new
             row = UserQuestionnaire(user_id=user_id, **payload)
             db.add(row)
             db.commit()
@@ -42,18 +45,14 @@ def upsert_questionnaire(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Upsert failed: {e}")
 
-
 @quest_router.get("/", response_model=Optional[QuestionnaireResponse])
 def get_user_questionnaire(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get current user's questionnaire"""
     questionnaire = db.query(UserQuestionnaire).filter(
         UserQuestionnaire.user_id == current_user["user_id"]
     ).first()
-    
-    # Return None if no questionnaire exists (will be null in JSON response)
     return questionnaire
 
 @quest_router.put("/", response_model=QuestionnaireResponse)
@@ -62,8 +61,6 @@ def update_questionnaire(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update user questionnaire"""
-    # Find existing questionnaire
     existing = db.query(UserQuestionnaire).filter(
         UserQuestionnaire.user_id == current_user["user_id"]
     ).first()
@@ -74,8 +71,12 @@ def update_questionnaire(
             detail="Questionnaire not found. Use POST to create."
         )
 
-    # Update fields that were provided
     update_data = data.model_dump(exclude_unset=True)
+    
+    # Convert work_shifts to dict format for JSON storage
+    if "work_shifts" in update_data and update_data["work_shifts"]:
+        update_data["work_shifts"] = [shift.model_dump() if hasattr(shift, 'model_dump') else shift for shift in update_data["work_shifts"]]
+    
     for field, value in update_data.items():
         setattr(existing, field, value)
     
@@ -89,8 +90,6 @@ def update_questionnaire(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update questionnaire: {str(e)}"
         )
-    
-# Add to routers/questionnaire.py
 
 @quest_router.get("/admin/user/{user_id}", response_model=Optional[QuestionnaireResponse])
 def get_user_questionnaire_admin(
@@ -98,9 +97,7 @@ def get_user_questionnaire_admin(
     current_user: dict = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Admin: Get any user's questionnaire"""
     questionnaire = db.query(UserQuestionnaire).filter(
         UserQuestionnaire.user_id == user_id
     ).first()
-    
     return questionnaire

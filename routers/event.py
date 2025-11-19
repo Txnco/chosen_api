@@ -425,8 +425,10 @@ async def list_events(
     
     if current_user["role_id"] != 1:
         query = query.filter(Event.user_id == current_user["user_id"])
-    elif user_id:
-        query = query.filter(Event.user_id == user_id)
+    else:
+        user_filter = user_id if user_id is not None else current_user["user_id"]
+        query = query.filter(Event.user_id == user_filter)
+
     
     if start_date_utc and end_date_utc:
         query = query.filter(

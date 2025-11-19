@@ -27,13 +27,41 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 @user_router.get('/me')
 def get_current_user(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == current_user['user_id'], User.deleted_at == None).first()
-    return{
+    
+    # Check questionnaire status
+    from models.questionnaire import UserQuestionnaire
+    questionnaire = db.query(UserQuestionnaire).filter(
+        UserQuestionnaire.user_id == user.id
+    ).first()
+    
+    needs_questionnaire_update = False
+    if questionnaire:
+        # Check if any required fields are null
+        needs_questionnaire_update = (
+            questionnaire.weight is None or
+            questionnaire.height is None or
+            questionnaire.birthday is None or
+            questionnaire.workout_environment is None or
+            questionnaire.work_shifts is None or
+            len(questionnaire.work_shifts or []) == 0 or
+            questionnaire.wake_up_time is None or
+            questionnaire.sleep_time is None or
+            questionnaire.morning_routine is None or
+            questionnaire.evening_routine is None
+        )
+    else:
+        # No questionnaire at all
+        needs_questionnaire_update = True
+    
+    return {
         "user_id": user.id,
         "role_id": user.role_id,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "email": user.email,
         "profile_picture": user.profile_picture,
+        "needs_questionnaire_update": needs_questionnaire_update,
+        "birthdate" : questionnaire.birthday,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
@@ -45,7 +73,6 @@ def get_user_by_id(
     db: Session = Depends(get_db)
 ):
     """Get user information by ID"""
-    # Only allow admins to get any user, clients can only get themselves
     if current_user['role_id'] != 1 and current_user['user_id'] != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -63,6 +90,29 @@ def get_user_by_id(
             detail="User not found"
         )
     
+    # Check questionnaire status
+    from models.questionnaire import UserQuestionnaire
+    questionnaire = db.query(UserQuestionnaire).filter(
+        UserQuestionnaire.user_id == user.id
+    ).first()
+    
+    needs_questionnaire_update = False
+    if questionnaire:
+        needs_questionnaire_update = (
+            questionnaire.weight is None or
+            questionnaire.height is None or
+            questionnaire.birthday is None or
+            questionnaire.workout_environment is None or
+            questionnaire.work_shifts is None or
+            len(questionnaire.work_shifts or []) == 0 or
+            questionnaire.wake_up_time is None or
+            questionnaire.sleep_time is None or
+            questionnaire.morning_routine is None or
+            questionnaire.evening_routine is None
+        )
+    else:
+        needs_questionnaire_update = True
+    
     return {
         "user_id": user.id,
         "role_id": user.role_id,
@@ -70,6 +120,8 @@ def get_user_by_id(
         "last_name": user.last_name,
         "email": user.email,
         "profile_picture": user.profile_picture,
+        "needs_questionnaire_update": needs_questionnaire_update,
+        "birthdate" : questionnaire.birthday,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }

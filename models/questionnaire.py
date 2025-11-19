@@ -1,22 +1,7 @@
-from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Enum, ForeignKey
+# models/questionnaire.py
+from sqlalchemy import Column, Integer, Float, String, Text, DateTime, Date, Time, ForeignKey, JSON
 from database import Base
 from sqlalchemy.sql import func
-
-import enum
-
-
-class WorkoutEnvironmentEnum(enum.Enum):
-    gym = "gym"
-    home = "home"
-    outdoor = "outdoor"
-    both = "both"
-
-class WorkShiftEnum(enum.Enum):
-    morning = "morning"
-    afternoon = "afternoon"
-    night = "night"
-    split = "split"
-    flexible = "flexible"
 
 class UserQuestionnaire(Base):
     __tablename__ = "user_questionnaire"
@@ -25,13 +10,13 @@ class UserQuestionnaire(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     weight = Column(Float, nullable=True)
     height = Column(Float, nullable=True)
-    birthday = Column(DateTime, nullable=True)  # Changed from age to birthday
+    birthday = Column(Date, nullable=True)
     health_issues = Column(Text, nullable=True)
     bad_habits = Column(Text, nullable=True)
-    workout_environment = Column(Enum(WorkoutEnvironmentEnum), nullable=True)
-    work_shift = Column(Enum(WorkShiftEnum), nullable=True)
-    wake_up_time = Column(String(10), nullable=True)
-    sleep_time = Column(String(10), nullable=True)
+    workout_environment = Column(String(50), nullable=True)
+    work_shifts = Column(JSON, nullable=True)  # Changed to JSON array
+    wake_up_time = Column(Time, nullable=True)
+    sleep_time = Column(Time, nullable=True)
     morning_routine = Column(Text, nullable=True)
     evening_routine = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.current_timestamp())
