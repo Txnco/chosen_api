@@ -454,3 +454,95 @@ def update_progress_photos(
     db.refresh(progress_photo)
     
     return progress_photo
+
+# Delete Weight Entry
+@tracking_router.delete('/weight/{weight_id}')
+def delete_weight(
+    weight_id: int,
+    current_user=Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    weight_entry = db.query(WeightTracking).filter(
+        WeightTracking.id == weight_id,
+        WeightTracking.deleted_at == None
+    ).first()
+    
+    if not weight_entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Weight entry not found"
+        )
+    
+    # Check permissions
+    if current_user['role_id'] != 1 and weight_entry.user_id != current_user['user_id']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own weight entries"
+        )
+    
+    # Soft delete
+    weight_entry.deleted_at = func.current_timestamp()
+    db.commit()
+    
+    return {"message": "Weight entry deleted successfully"}
+
+# Delete Day Rating
+@tracking_router.delete('/day-rating/{rating_id}')
+def delete_day_rating(
+    rating_id: int,
+    current_user=Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    day_rating = db.query(DayRating).filter(
+        DayRating.id == rating_id
+    ).first()
+    
+    if not day_rating:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Day rating not found"
+        )
+    
+    # Check permissions
+    if current_user['role_id'] != 1 and day_rating.user_id != current_user['user_id']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own day ratings"
+        )
+    
+    # Hard delete for day ratings
+    db.delete(day_rating)
+    db.commit()
+    
+    return {"message": "Day rating deleted successfully"}
+
+# Delete Progress Photo
+@tracking_router.delete('/progress-photos/{progress_id}')
+def delete_progress_photo(
+    progress_id: int,
+    current_user=Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    progress_photo = db.query(ProgressPhoto).filter(
+        ProgressPhoto.id == progress_id,
+        ProgressPhoto.deleted_at == None
+    ).first()
+    
+    if not progress_photo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Progress photo not found"
+        )
+    
+    # Check permissions
+    if current_user['role_id'] != 1 and progress_photo.user_id != current_user['user_id']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own progress photos"
+        )
+    
+    # Soft delete
+    progress_photo.deleted_at = func.current_timestamp()
+    db.commit()
+    
+    return {"message": "Progress photo deleted successfully"}
