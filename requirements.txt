@@ -11,3 +11,4 @@ python-multipart
 Pillow
 python-magic
 python-dateutil
+boto3

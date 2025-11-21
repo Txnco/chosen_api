@@ -19,6 +19,11 @@ class Settings(BaseSettings):
 
     UPLOAD_URL: str
 
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_SES_REGION: str
+    SES_FROM_EMAIL: str
+
     class Config:
         env_file = ".env"
 

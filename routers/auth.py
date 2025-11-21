@@ -13,10 +13,17 @@ from typing import Optional
 from models.user_login import UserLogin
 from functions.upload import upload_profile_image
 from schema.notification import get_default_notification_preferences
+from functions.send_mail import send_welcome_email
+import secrets
+import string
 
 
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def generate_random_password(length: int = 12) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 class RegisterRequest(BaseModel):
     first_name: str
@@ -29,12 +36,19 @@ def register(
     first_name: str = Form(...),
     last_name: str = Form(...),
     email: str = Form(...),
-    password: str = Form(...),
+    password: Optional[str] = Form(None),  
     profile_picture: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db), 
-    current_user=Depends(require_admin)
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
+    if not password or not password.strip() or password.strip().lower() == "undefined":
+        password = generate_random_password()
+    else:
+        password = password.strip()
+
     hashed_pw = pwd_context.hash(password)
+
+    # Check if user exists
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(
@@ -47,14 +61,13 @@ def register(
     if profile_picture:
         try:
             profile_picture_filename = upload_profile_image(profile_picture)
-        except HTTPException as e:
-            raise e
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to upload profile picture: {str(e)}"
             )
 
+    # Create user
     new_user = User(
         email=email,
         password_hash=hashed_pw,
@@ -64,9 +77,19 @@ def register(
         profile_picture=profile_picture_filename,
         notification_preferences=get_default_notification_preferences()
     )
+
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # Send email AFTER successful commit
+    try:
+        send_welcome_email(first_name, email, password)
+    except Exception as e:
+        # Email failed, but user is created — this is safest behavior
+        print("SES send error:", e)
+
     return {
         "message": f"User created by user {current_user['user_id']}",
         "user": {
