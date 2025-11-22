@@ -25,6 +25,12 @@ class WeeklyNotification(BaseModel):
             return day_lower if day_lower in VALID_DAYS else "monday"
         return "monday"
 
+
+class MonthlyNotification(BaseModel):
+    enabled: bool = True
+    day_of_month: int = Field(1, ge=1, le=28, description="Day of month (1-28 to avoid month-end issues)")
+    time: str = Field("09:00", pattern=r"^\d{2}:\d{2}$")
+
 class WaterReminderNotification(BaseModel):
     enabled: bool = True
     interval_hours: int = Field(2, ge=1, le=24)
@@ -54,11 +60,20 @@ class NotificationPreferencesResponse(BaseModel):
     class Config:
         from_attributes = True
 
-def get_default_notification_preferences() -> Dict[str, Any]:
+def get_default_notification_preferences(user_created_day: int = 1) -> Dict[str, Any]:
+    """
+    Get default notification preferences.
+
+    Args:
+        user_created_day: Day of month from user creation date (for progress_photo)
+    """
+    # Clamp day to 1-28 to avoid month-end issues
+    photo_day = min(max(user_created_day, 1), 28)
+
     return {
         "daily_planning": {"enabled": True, "time": "20:00"},
         "day_rating": {"enabled": True, "time": "20:00"},
-        "progress_photo": {"enabled": True, "day": "saturday", "time": "09:00"},
+        "progress_photo": {"enabled": True, "day_of_month": photo_day, "time": "09:00"},
         "weight_tracking": {"enabled": True, "day": "saturday", "time": "08:00"},
         "water_reminders": {"enabled": True, "interval_hours": 2},
         "birthday": {"enabled": True, "time": "09:00"},

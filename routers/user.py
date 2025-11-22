@@ -14,6 +14,7 @@ from models.user import User
 from models.weight_tracking import WeightTracking
 from schema.weight_tracking import WeightTrackingCreate, WeightTrackingUpdate, WeightTrackingResponse
 from functions.upload import upload_profile_image
+from functions.send_mail import send_password_reset_email, generate_reset_token, get_reset_token_expiry
 from models.user import User
 
 
@@ -52,7 +53,7 @@ def get_current_user(current_user=Depends(get_current_user), db: Session = Depen
     else:
         # No questionnaire at all
         needs_questionnaire_update = True
-    
+    birthdate = questionnaire.birthday if questionnaire else None
     return {
         "user_id": user.id,
         "role_id": user.role_id,
@@ -61,7 +62,7 @@ def get_current_user(current_user=Depends(get_current_user), db: Session = Depen
         "email": user.email,
         "profile_picture": user.profile_picture,
         "needs_questionnaire_update": needs_questionnaire_update,
-        "birthdate" : questionnaire.birthday if questionnaire else None,
+        "birthdate" : birthdate,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
@@ -112,7 +113,7 @@ def get_user_by_id(
         )
     else:
         needs_questionnaire_update = True
-    
+    birthdate = questionnaire.birthday if questionnaire else None
     return {
         "user_id": user.id,
         "role_id": user.role_id,
@@ -121,7 +122,7 @@ def get_user_by_id(
         "email": user.email,
         "profile_picture": user.profile_picture,
         "needs_questionnaire_update": needs_questionnaire_update,
-        "birthdate" : questionnaire.birthday,
+        "birthdate" : birthdate,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
@@ -246,5 +247,84 @@ def update_user(
             "role_id": user.role_id,
             "profile_picture": user.profile_picture,
         },
+    }
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+@user_router.post('/request-password-reset')
+def request_password_reset(
+    request: PasswordResetRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Request a password reset email (public endpoint).
+    Sends a reset token to the user's email if the account exists.
+    """
+    user = db.query(User).filter(
+        User.email == request.email,
+        User.deleted_at == None
+    ).first()
+
+    # Always return success to prevent email enumeration
+    if not user:
+        return {"message": "Ako račun postoji, e-mail za resetiranje lozinke je poslan."}
+
+    # Generate reset token and set expiry
+    reset_token = generate_reset_token()
+    user.reset_token = reset_token
+    user.reset_token_expires_at = get_reset_token_expiry(hours=24)
+    db.commit()
+
+    # Send password reset email
+    send_password_reset_email(
+        first_name=user.first_name,
+        email=user.email,
+        reset_token=reset_token
+    )
+
+    return {"message": "Ako račun postoji, e-mail za resetiranje lozinke je poslan."}
+
+
+@user_router.post('/{user_id}/admin-reset-password')
+def admin_reset_password(
+    user_id: int,
+    current_user=Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to trigger a password reset email for another user.
+    Generates a reset token and sends an email to the target user.
+    """
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted_at == None
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Korisnik nije pronađen"
+        )
+
+    # Generate reset token and set expiry
+    reset_token = generate_reset_token()
+    user.reset_token = reset_token
+    user.reset_token_expires_at = get_reset_token_expiry(hours=24)
+    db.commit()
+
+    # Send password reset email
+    send_password_reset_email(
+        first_name=user.first_name,
+        email=user.email,
+        reset_token=reset_token
+    )
+
+    return {
+        "message": f"E-mail za resetiranje lozinke poslan korisniku {user.email}",
+        "user_id": user.id,
+        "email": user.email
     }
 

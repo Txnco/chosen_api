@@ -55,7 +55,8 @@ def get_notification_preferences(
     birthday_date = questionnaire.birthday.isoformat() if questionnaire and questionnaire.birthday else None
     
     if not user.notification_preferences:
-        preferences = get_default_notification_preferences()
+        user_created_day = user.created_at.day if user.created_at else 1
+        preferences = get_default_notification_preferences(user_created_day)
         user.notification_preferences = preferences
         db.commit()
         db.refresh(user)
@@ -96,7 +97,8 @@ def update_notification_preferences(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    current_prefs = user.notification_preferences.copy() if user.notification_preferences else get_default_notification_preferences()
+    user_created_day = user.created_at.day if user.created_at else 1
+    current_prefs = user.notification_preferences.copy() if user.notification_preferences else get_default_notification_preferences(user_created_day)
     
     update_data = data.model_dump(exclude_unset=True)
     
@@ -159,11 +161,12 @@ def reset_notification_preferences(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    user.notification_preferences = get_default_notification_preferences()
+    user_created_day = user.created_at.day if user.created_at else 1
+    user.notification_preferences = get_default_notification_preferences(user_created_day)
     flag_modified(user, "notification_preferences")
     db.commit()
     db.refresh(user)
-    
+
     return {
         "message": "Notification preferences reset to defaults",
         "notifications": user.notification_preferences

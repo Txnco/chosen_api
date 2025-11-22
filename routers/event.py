@@ -16,7 +16,7 @@ from schema.event import (
     EventEditScope
 )
 from utils.timezone_utils import convert_utc_to_user_timezone, convert_user_to_utc_timezone
-from typing import Optional, List, Set
+from typing import Optional, List, Dict
 from datetime import datetime, timedelta, date
 
 try:
@@ -43,6 +43,12 @@ def apply_timezone_to_event(event_dict: dict, timezone_offset_minutes: Optional[
         if event_dict.get("repeat_until"):
             event_dict["repeat_until"] = convert_utc_to_user_timezone(
                 event_dict["repeat_until"], 
+                timezone_offset_minutes
+            )
+        # FIXED: Apply timezone to original_start too
+        if event_dict.get("original_start"):
+            event_dict["original_start"] = convert_utc_to_user_timezone(
+                event_dict["original_start"], 
                 timezone_offset_minutes
             )
     return event_dict
@@ -85,7 +91,7 @@ def get_modified_event_for_occurrence(
     event: Event, 
     occurrence_date: datetime, 
     exceptions: List[EventException],
-    db: Session
+    modified_events_cache: Dict[int, Event]
 ) -> Optional[Event]:
     """Get the modified event for a specific occurrence, if one exists"""
     occurrence_date_only = occurrence_date.date()
@@ -93,36 +99,98 @@ def get_modified_event_for_occurrence(
         if (exception.exception_date == occurrence_date_only and 
             exception.exception_type == ExceptionTypeEnum.modified and
             exception.modified_event_id):
-            return db.query(Event).filter(Event.id == exception.modified_event_id).first()
+            # Use cache instead of querying
+            return modified_events_cache.get(exception.modified_event_id)
     return None
 
 
-def matches_repeat_days(occurrence_date: datetime, repeat_days: Optional[str]) -> bool:
-    """Check if occurrence matches the specified repeat days (for weekly repeats)"""
-    if not repeat_days:
-        return True
+def calculate_previous_occurrence(event: Event, target_date: datetime) -> datetime:
+    """
+    Calculate the actual previous occurrence before the target date.
+    FIXED: Properly handles different repeat types
+    """
+    current = event.start_time
+    previous = event.start_time
     
-    allowed_days = set(int(d) for d in repeat_days.split(',') if d.strip())
-    return occurrence_date.weekday() in allowed_days
+    if event.repeat_type == RepeatTypeEnum.daily:
+        while current < target_date:
+            previous = current
+            current += timedelta(days=event.repeat_interval)
+    
+    elif event.repeat_type == RepeatTypeEnum.weekly:
+        if event.repeat_days:
+            # For weekly with specific days, find the last occurrence before target
+            allowed_weekdays = set(int(d) for d in event.repeat_days.split(','))
+            week_number = 0
+            
+            while True:
+                week_start = event.start_time + timedelta(days=week_number * 7)
+                if week_start >= target_date:
+                    break
+                    
+                if week_number % event.repeat_interval == 0:
+                    for day_offset in range(7):
+                        check_date = week_start + timedelta(days=day_offset)
+                        weekday = check_date.weekday()
+                        
+                        if weekday in allowed_weekdays and event.start_time <= check_date < target_date:
+                            occurrence = datetime(
+                                check_date.year,
+                                check_date.month,
+                                check_date.day,
+                                event.start_time.hour,
+                                event.start_time.minute,
+                                event.start_time.second
+                            )
+                            if occurrence < target_date:
+                                previous = occurrence
+                
+                week_number += 1
+        else:
+            # Weekly without specific days
+            while current < target_date:
+                previous = current
+                current += timedelta(weeks=event.repeat_interval)
+    
+    elif event.repeat_type == RepeatTypeEnum.monthly:
+        if relativedelta:
+            while current < target_date:
+                previous = current
+                current += relativedelta(months=event.repeat_interval)
+        else:
+            while current < target_date:
+                previous = current
+                current += timedelta(days=30 * event.repeat_interval)
+    
+    elif event.repeat_type == RepeatTypeEnum.yearly:
+        if relativedelta:
+            while current < target_date:
+                previous = current
+                current += relativedelta(years=event.repeat_interval)
+        else:
+            while current < target_date:
+                previous = current
+                current += timedelta(days=365 * event.repeat_interval)
+    
+    return previous
 
-
-# routes/event.py - Replace the generate_repeat_instances function
 
 def generate_repeat_instances(
     event: Event, 
     start_date: datetime, 
     end_date: datetime,
     timezone_offset_minutes: Optional[int],
-    db: Session
+    exceptions: List[EventException],
+    modified_events_cache: Dict[int, Event]
 ) -> List[dict]:
-    """Generate repeat instances for an event within a date range"""
+    """
+    Generate repeat instances for an event within a date range.
+    FIXED: Optimized to use preloaded exceptions and cache
+    """
     instances = []
     
     if event.repeat_type == RepeatTypeEnum.none:
         return instances
-    
-    # Load exceptions once
-    exceptions = db.query(EventException).filter(EventException.event_id == event.id).all()
     
     duration = event.end_time - event.start_time
     
@@ -138,27 +206,28 @@ def generate_repeat_instances(
         # Handle weekly with specific days (e.g., Mon-Fri)
         allowed_weekdays = set(int(d) for d in event.repeat_days.split(','))
         
-        # For weekly repeats with multiple days, count refers to WEEK cycles, not individual days
+        # FIXED: Count ALL week cycles, not just visible ones
         week_cycle_count = 0
         max_week_cycles = event.repeat_count if event.repeat_end_type == RepeatEndTypeEnum.count else None
         
         week_number = 0
         
         while True:
-            # Check week cycle limit
-            if max_week_cycles is not None and week_cycle_count >= max_week_cycles:
-                break
-            
-            # Get the start of this week interval (based on event start)
+            # Get the start of this week interval
             week_start = event.start_time + timedelta(days=week_number * 7)
             
             # Check if we've gone past the repeat end date
-            if week_start > repeat_end or week_start > end_date:
+            if week_start > repeat_end:
                 break
             
             # Only process weeks that match our interval
             if week_number % event.repeat_interval == 0:
-                week_has_instances = False
+                # FIXED: Check week cycle limit BEFORE processing this week
+                if max_week_cycles is not None and week_cycle_count >= max_week_cycles:
+                    break
+                
+                # Increment counter for this week cycle
+                week_cycle_count += 1
                 
                 # Generate instances for each selected weekday in this week
                 for day_offset in range(7):
@@ -192,7 +261,7 @@ def generate_repeat_instances(
                             if should_include_occurrence(event, instance_start, exceptions):
                                 # Check if this occurrence was modified
                                 modified_event = get_modified_event_for_occurrence(
-                                    event, instance_start, exceptions, db
+                                    event, instance_start, exceptions, modified_events_cache
                                 )
                                 
                                 if modified_event:
@@ -228,11 +297,6 @@ def generate_repeat_instances(
                                     )
                                 
                                 instances.append(instance_dict)
-                                week_has_instances = True
-                
-                # Increment week cycle count if we added any instances in this week
-                if week_has_instances:
-                    week_cycle_count += 1
             
             # Move to next week
             week_number += 1
@@ -240,6 +304,7 @@ def generate_repeat_instances(
         return instances
     
     # Handle other repeat types (daily, monthly, yearly, weekly without specific days)
+    # FIXED: Count ALL occurrences, not just visible ones
     occurrence_count = 0
     current_date = event.start_time
     
@@ -260,19 +325,24 @@ def generate_repeat_instances(
             current_date += timedelta(days=365 * event.repeat_interval)
     
     while current_date <= min(repeat_end, end_date):
-        # Check count limit
+        # FIXED: Check count limit BEFORE generating
         if event.repeat_end_type == RepeatEndTypeEnum.count and event.repeat_count:
             if occurrence_count >= event.repeat_count:
                 break
         
+        # FIXED: Increment count for ALL occurrences, not just visible ones
+        occurrence_count += 1
+        
         instance_end = current_date + duration
         
         # Check if instance overlaps with requested range
-        if instance_end >= start_date:
+        if instance_end >= start_date and current_date <= end_date:
             # Check if this occurrence was deleted
             if should_include_occurrence(event, current_date, exceptions):
                 # Check if this occurrence was modified
-                modified_event = get_modified_event_for_occurrence(event, current_date, exceptions, db)
+                modified_event = get_modified_event_for_occurrence(
+                    event, current_date, exceptions, modified_events_cache
+                )
                 
                 if modified_event:
                     instance_dict = event_to_dict_with_timezone(modified_event, timezone_offset_minutes)
@@ -303,7 +373,6 @@ def generate_repeat_instances(
                     instance_dict = apply_timezone_to_event(instance_dict, timezone_offset_minutes)
                 
                 instances.append(instance_dict)
-                occurrence_count += 1
         
         # Move to next occurrence
         if event.repeat_type == RepeatTypeEnum.daily:
@@ -326,6 +395,22 @@ def generate_repeat_instances(
     return instances
 
 
+def validate_repeat_days(repeat_days: Optional[str]) -> None:
+    """Validate repeat_days format and values"""
+    if not repeat_days:
+        return
+    
+    try:
+        days = [int(d.strip()) for d in repeat_days.split(',') if d.strip()]
+        if not all(0 <= d <= 6 for d in days):
+            raise ValueError("Days must be between 0 and 6")
+    except (ValueError, AttributeError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid repeat_days format: {str(e)}"
+        )
+
+
 @event_router.post("/", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event(
     data: EventCreate,
@@ -334,6 +419,10 @@ async def create_event(
     timezone_offset: Optional[int] = Header(None, alias="X-Timezone-Offset")
 ):
     """Create a new event"""
+    
+    # Validate repeat_days if provided
+    if data.repeat_days:
+        validate_repeat_days(data.repeat_days)
     
     # Convert times from user timezone to UTC
     start_time_utc = convert_user_to_utc_timezone(data.start_time, timezone_offset)
@@ -428,8 +517,8 @@ async def list_events(
     else:
         user_filter = user_id if user_id is not None else current_user["user_id"]
         query = query.filter(Event.user_id == user_filter)
-
     
+    # FIXED: Simplified filtering - only filter in query, not double-filter
     if start_date_utc and end_date_utc:
         query = query.filter(
             Event.start_time <= end_date_utc
@@ -446,19 +535,37 @@ async def list_events(
     
     events = query.order_by(Event.start_time).all()
     
+    # FIXED: Preload all exceptions to avoid N+1 queries
+    event_ids = [e.id for e in events]
+    exceptions_list = db.query(EventException).filter(
+        EventException.event_id.in_(event_ids)
+    ).all() if event_ids else []
+    
+    # Group exceptions by event_id
+    exceptions_by_event: Dict[int, List[EventException]] = {}
+    for exc in exceptions_list:
+        if exc.event_id not in exceptions_by_event:
+            exceptions_by_event[exc.event_id] = []
+        exceptions_by_event[exc.event_id].append(exc)
+    
+    # FIXED: Preload all modified events
+    modified_event_ids = [exc.modified_event_id for exc in exceptions_list if exc.modified_event_id]
+    modified_events = db.query(Event).filter(Event.id.in_(modified_event_ids)).all() if modified_event_ids else []
+    modified_events_cache = {e.id: e for e in modified_events}
+    
     result_events = []
     
     for event in events:
-        if start_date_utc and end_date_utc:
-            if event.start_time >= start_date_utc and event.end_time <= end_date_utc:
-                event_dict = event_to_dict_with_timezone(event, timezone_offset)
-                result_events.append(EventResponse(**event_dict))
-        else:
-            event_dict = event_to_dict_with_timezone(event, timezone_offset)
-            result_events.append(EventResponse(**event_dict))
+        # FIXED: Remove double filtering - event already matches query filters
+        event_dict = event_to_dict_with_timezone(event, timezone_offset)
+        result_events.append(EventResponse(**event_dict))
         
         if include_repeating and start_date_utc and end_date_utc and event.repeat_type != RepeatTypeEnum.none:
-            instances = generate_repeat_instances(event, start_date_utc, end_date_utc, timezone_offset, db)
+            event_exceptions = exceptions_by_event.get(event.id, [])
+            instances = generate_repeat_instances(
+                event, start_date_utc, end_date_utc, timezone_offset, 
+                event_exceptions, modified_events_cache
+            )
             result_events.extend([EventResponse(**inst) for inst in instances])
     
     return result_events
@@ -504,11 +611,10 @@ async def get_event(
     return response
 
 
-
 @event_router.patch("/{event_id}", response_model=EventResponse)
 async def update_event(
     event_id: int,
-    request_body: dict,  # Accept raw dict instead of typed models
+    request_body: dict,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
     timezone_offset: Optional[int] = Header(None, alias="X-Timezone-Offset")
@@ -523,10 +629,11 @@ async def update_event(
             detail="Event not found"
         )
     
-    if current_user["role_id"] != 1 and event.created_by != current_user["user_id"]:
+    # FIXED: Permission check - admins can edit anything, non-admins can edit their own events
+    if current_user["role_id"] != 1 and event.user_id != current_user["user_id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only update events you created"
+            detail="You can only update your own events"
         )
     
     # Extract scope from request body
@@ -547,6 +654,10 @@ async def update_event(
         response_dict = event_to_dict_with_timezone(event, timezone_offset)
         return EventResponse(**response_dict)
     
+    # Validate repeat_days if being updated
+    if "repeat_days" in request_body and request_body["repeat_days"]:
+        validate_repeat_days(request_body["repeat_days"])
+    
     # Convert times
     if "start_time" in request_body:
         request_body["start_time"] = convert_user_to_utc_timezone(
@@ -563,6 +674,25 @@ async def update_event(
             datetime.fromisoformat(request_body["repeat_until"].replace('Z', '+00:00')),
             timezone_offset
         )
+    
+    # FIXED: Validate enum values with proper error handling
+    if "repeat_type" in request_body:
+        try:
+            RepeatTypeEnum[request_body["repeat_type"]]
+        except KeyError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid repeat_type: {request_body['repeat_type']}"
+            )
+    
+    if "repeat_end_type" in request_body:
+        try:
+            RepeatEndTypeEnum[request_body["repeat_end_type"]]
+        except KeyError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid repeat_end_type: {request_body['repeat_end_type']}"
+            )
     
     # Validate times
     if "start_time" in request_body or "end_time" in request_body:
@@ -645,9 +775,9 @@ async def update_event(
             
             occurrence_date_utc = convert_user_to_utc_timezone(occurrence_date, timezone_offset)
             
-            # End the original series before this date
-            one_occurrence_before = occurrence_date_utc - timedelta(days=1)
-            event.repeat_until = one_occurrence_before
+            # FIXED: Calculate the actual previous occurrence
+            previous_occurrence = calculate_previous_occurrence(event, occurrence_date_utc)
+            event.repeat_until = previous_occurrence
             event.repeat_end_type = RepeatEndTypeEnum.date
             
             # Create new event starting from this occurrence
@@ -686,6 +816,8 @@ async def update_event(
         response_dict = event_to_dict_with_timezone(event, timezone_offset)
         return EventResponse(**response_dict)
         
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
@@ -697,7 +829,7 @@ async def update_event(
 @event_router.delete("/{event_id}")
 async def delete_event(
     event_id: int,
-    request_body: dict,  # Accept raw dict
+    request_body: dict,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
     timezone_offset: Optional[int] = Header(None, alias="X-Timezone-Offset")
@@ -712,10 +844,11 @@ async def delete_event(
             detail="Event not found"
         )
     
-    if current_user["role_id"] != 1 and event.created_by != current_user["user_id"]:
+    # FIXED: Permission check - admins can delete anything, non-admins can delete their own events
+    if current_user["role_id"] != 1 and event.user_id != current_user["user_id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only delete events you created"
+            detail="You can only delete your own events"
         )
     
     # Extract scope from request body
@@ -763,14 +896,16 @@ async def delete_event(
             
             occurrence_date_utc = convert_user_to_utc_timezone(occurrence_date, timezone_offset)
             
-            # End the series before this date
-            one_occurrence_before = occurrence_date_utc - timedelta(days=1)
-            event.repeat_until = one_occurrence_before
+            # FIXED: Calculate the actual previous occurrence
+            previous_occurrence = calculate_previous_occurrence(event, occurrence_date_utc)
+            event.repeat_until = previous_occurrence
             event.repeat_end_type = RepeatEndTypeEnum.date
             
             db.commit()
             return {"message": "Future event occurrences deleted successfully"}
             
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
