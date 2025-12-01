@@ -328,3 +328,52 @@ def admin_reset_password(
         "email": user.email
     }
 
+
+class FCMTokenUpdate(BaseModel):
+    fcm_token: str
+
+
+@user_router.post('/fcm-token')
+def update_fcm_token(
+    data: FCMTokenUpdate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user's FCM token for push notifications"""
+    user = db.query(User).filter(User.id == current_user["user_id"]).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.fcm_token = data.fcm_token
+    db.commit()
+    
+    logger.info(f"✅ FCM token updated for user {user.id}", extra={'color': True})
+    
+    return {
+        "message": "FCM token updated successfully",
+        "user_id": user.id
+    }
+
+
+@user_router.delete('/fcm-token')
+def delete_fcm_token(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete user's FCM token (for logout)"""
+    user = db.query(User).filter(User.id == current_user["user_id"]).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.fcm_token = None
+    db.commit()
+    
+    logger.info(f"✅ FCM token deleted for user {user.id}", extra={'color': True})
+    
+    return {
+        "message": "FCM token deleted successfully",
+        "user_id": user.id
+    }
+

@@ -18,6 +18,8 @@ from models.user import User
 from models.event import Event, EventCopy
 from models.questionnaire import UserQuestionnaire
 
+from functions.fcm import FCMService
+
 from starlette.responses import StreamingResponse, FileResponse
 import logging
 import logging.handlers
@@ -371,6 +373,10 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 CHOSEN API Starting up...", extra={'color': True})
+    
+    # Initialize Firebase Cloud Messaging
+    FCMService.initialize()
+    
     logger.info(f"📁 Logs directory: {logs_dir.absolute()}", extra={'color': True})
     logger.info("✅ CHOSEN API Started successfully!", extra={'color': True})
 

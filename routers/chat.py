@@ -14,6 +14,7 @@ from pathlib import Path
 import uuid
 import shutil
 from config import settings
+import logging
 
 from schema.chat import (
     ChatThreadCreate,
@@ -21,6 +22,9 @@ from schema.chat import (
     ChatMessageCreate,
     ChatMessageResponse,
 )
+from functions.fcm import FCMService
+
+logger = logging.getLogger("chosen_api")
 
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -105,6 +109,24 @@ def send_message(
         
         db.commit()
         db.refresh(message)
+        
+        # 🆕 Send FCM notification to recipient
+        sender = db.query(User).filter(User.id == user_id).first()
+        recipient_id = thread.client_id if user_role == 1 else thread.trainer_id
+        recipient = db.query(User).filter(User.id == recipient_id).first()
+        
+        if recipient and recipient.fcm_token:
+            sender_name = f"{sender.first_name} {sender.last_name}"
+            FCMService.send_message_notification(
+                fcm_token=recipient.fcm_token,
+                sender_name=sender_name,
+                message_body=data.body,
+                thread_id=data.thread_id,
+                sender_id=user_id
+            )
+            logger.info(f"📱 FCM notification sent to user {recipient_id}", extra={'color': True})
+        else:
+            logger.info(f"⚠️ No FCM token for user {recipient_id}, skipping notification")
         
         return message
     
