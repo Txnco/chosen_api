@@ -166,7 +166,7 @@ def reset_password(
         )
 
     # Check if token has expired
-    if not user.reset_token_expires_at or user.reset_token_expires_at < datetime.now(timezone.utc):
+    if not user.reset_token_expires_at or user.reset_token_expires_at < datetime.now():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token je istekao. Molimo zatražite novi link za resetiranje."
