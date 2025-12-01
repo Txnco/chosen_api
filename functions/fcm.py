@@ -59,31 +59,27 @@ class FCMService:
             # Truncate message if too long
             preview = message_body[:100] + "..." if len(message_body) > 100 else message_body
             
-            # Build notification payload
+            # Build data-only payload (no notification field to prevent duplicates)
+            # Flutter will handle displaying the notification via local notifications
             message = messaging.Message(
-                notification=messaging.Notification(
-                    title=sender_name,
-                    body=preview,
-                ),
                 data={
                     "type": "chat_message",
-                    "thread_id": str(thread_id),
+                    "conversation_id": str(thread_id),  # Match Flutter's expected field name
+                    "thread_id": str(thread_id),  # Keep for backwards compatibility
                     "sender_id": str(sender_id),
+                    "title": sender_name,  # Pass title in data for Flutter to use
+                    "body": preview,  # Pass body in data for Flutter to use
                     "click_action": "FLUTTER_NOTIFICATION_CLICK",
                 },
                 token=fcm_token,
                 android=messaging.AndroidConfig(
                     priority="high",
-                    notification=messaging.AndroidNotification(
-                        icon="notification_icon",
-                        color="#000000",
-                        sound="default",
-                        channel_id="chat_messages",
-                    ),
                 ),
                 apns=messaging.APNSConfig(
+                    headers={"apns-priority": "10"},
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
+                            content_available=True,
                             sound="default",
                             badge=1,
                             category="CHAT_MESSAGE",
