@@ -126,9 +126,9 @@ def get_reset_token_expiry(hours: int = 24):
     return datetime.now(timezone.utc) + timedelta(hours=hours)
 
 
-def send_password_reset_email(first_name: str, email: str, reset_token: str):
+def send_password_reset_email(first_name: str, email: str, reset_token: str, reset_url: str = None):
     """
-    Sends a password reset email using AWS SES.
+    Sends a password reset email using AWS SES with a clickable link.
     Includes both HTML and Plain Text versions.
     """
 
@@ -140,6 +140,10 @@ def send_password_reset_email(first_name: str, email: str, reset_token: str):
         aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
     )
 
+    # Default reset URL if not provided
+    if not reset_url:
+        reset_url = f"https://admin.chosen-international.com/reset-password?token={reset_token}"
+
     subject = "Chosen International - Zahtjev za resetiranje lozinke"
 
     # Plain Text Version
@@ -148,12 +152,12 @@ Pozdrav {first_name},
 
 Primili smo zahtjev za resetiranje Vaše lozinke.
 
-Vaš kod za resetiranje lozinke je:
-----------------------------
-{reset_token}
-----------------------------
+Kliknite na sljedeći link za resetiranje lozinke:
+{reset_url}
 
-Ovaj kod vrijedi 24 sata.
+Ako link ne radi, kopirajte ga i zalijepite u svoj preglednik.
+
+Ovaj link vrijedi 24 sata.
 
 Ako niste zatražili resetiranje lozinke, molimo ignorirajte ovaj e-mail.
 
@@ -161,7 +165,7 @@ Lijep pozdrav,
 Chosen International Tim
 """
 
-    # HTML Version
+    # HTML Version with clickable button
     html_body = f"""
 <!DOCTYPE html>
 <html>
@@ -188,16 +192,29 @@ Chosen International Tim
                             <p style="color: #555555; line-height: 1.5;">Pozdrav {first_name},</p>
                             <p style="color: #555555; line-height: 1.5;">Primili smo zahtjev za resetiranje Vaše lozinke.</p>
 
-                            <table width="100%" style="background-color: #f9f9f9; border-left: 4px solid #000000; margin: 20px 0; padding: 20px;">
-                                <tr>
-                                    <td>
-                                        <p style="margin: 0 0 5px 0; font-size: 12px; text-transform: uppercase; color: #888888;">Kod za resetiranje</p>
-                                        <p style="margin: 0; font-size: 24px; font-weight: bold; color: #000000; letter-spacing: 2px;">{reset_token}</p>
-                                    </td>
-                                </tr>
-                            </table>
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="{reset_url}"
+                                   style="display: inline-block;
+                                          padding: 16px 36px;
+                                          background-color: #000000;
+                                          color: #ffffff;
+                                          text-decoration: none;
+                                          border-radius: 8px;
+                                          font-weight: bold;
+                                          font-size: 16px;
+                                          letter-spacing: 1px;">
+                                    RESETIRAJ LOZINKU
+                                </a>
+                            </div>
 
-                            <p style="color: #666666; font-size: 14px;">Ovaj kod vrijedi 24 sata.</p>
+                            <p style="color: #666666; font-size: 14px; text-align: center; margin-top: 20px;">
+                                Ili kopirajte ovaj link u svoj preglednik:
+                            </p>
+                            <p style="color: #888888; font-size: 12px; word-break: break-all; background-color: #f9f9f9; padding: 12px; border-radius: 4px; text-align: center;">
+                                {reset_url}
+                            </p>
+
+                            <p style="color: #666666; font-size: 14px; margin-top: 30px;">Ovaj link vrijedi 24 sata.</p>
                             <p style="color: #666666; font-size: 14px;">Ako niste zatražili resetiranje lozinke, molimo ignorirajte ovaj e-mail.</p>
 
                             <p style="margin-top: 30px; font-weight: bold;">Lijep pozdrav,<br>Chosen International Tim</p>

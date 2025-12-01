@@ -16,6 +16,7 @@ from schema.notification import get_default_notification_preferences
 from functions.send_mail import send_welcome_email
 import secrets
 import string
+from datetime import datetime, timezone
 
 
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -137,6 +138,58 @@ def validate_token(current_user=Depends(get_current_user)):
         "valid": True
     }
 
+
+class ResetPasswordConfirm(BaseModel):
+    token: str
+    new_password: str
+
+
+@auth_router.post('/reset-password')
+def reset_password(
+    data: ResetPasswordConfirm,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset user password using a valid reset token.
+    This is a public endpoint that anyone can use with a valid token.
+    """
+    # Find user by reset token
+    user = db.query(User).filter(
+        User.reset_token == data.token,
+        User.deleted_at == None
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token nevažeći ili je istekao"
+        )
+
+    # Check if token has expired
+    if not user.reset_token_expires_at or user.reset_token_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token je istekao. Molimo zatražite novi link za resetiranje."
+        )
+
+    # Validate new password
+    if len(data.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lozinka mora imati najmanje 6 znakova"
+        )
+
+    # Update password and clear reset token
+    user.password_hash = pwd_context.hash(data.new_password)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+    db.commit()
+
+    return {
+        "message": "Lozinka je uspješno promijenjena. Možete se sada prijaviti.",
+        "success": True
+    }
+
 # @auth_router.post('/logout')
 # def logout(current_user=Depends(get_current_user)):
-    
+
