@@ -329,31 +329,34 @@ def admin_reset_password(
     }
 
 
-class FCMTokenUpdate(BaseModel):
-    fcm_token: str
-
-
 @user_router.post('/fcm-token')
-def update_fcm_token(
-    data: FCMTokenUpdate,
+def save_fcm_token(
+    data: dict,
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update user's FCM token for push notifications"""
-    user = db.query(User).filter(User.id == current_user["user_id"]).first()
+    """Save FCM token for push notifications"""
+    user_id = current_user['user_id']
+    fcm_token = data.get('fcm_token')
     
+    if not fcm_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="FCM token is required"
+        )
+    
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
     
-    user.fcm_token = data.fcm_token
+    user.fcm_token = fcm_token
     db.commit()
     
-    logger.info(f"✅ FCM token updated for user {user.id}", extra={'color': True})
-    
-    return {
-        "message": "FCM token updated successfully",
-        "user_id": user.id
-    }
+    logger.info(f"FCM token saved for user {user_id}")
+    return {"message": "FCM token saved successfully"}
 
 
 @user_router.delete('/fcm-token')
@@ -361,19 +364,14 @@ def delete_fcm_token(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete user's FCM token (for logout)"""
-    user = db.query(User).filter(User.id == current_user["user_id"]).first()
+    """Delete FCM token on logout"""
+    user_id = current_user['user_id']
     
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        user.fcm_token = None
+        db.commit()
+        logger.info(f"FCM token deleted for user {user_id}")
     
-    user.fcm_token = None
-    db.commit()
-    
-    logger.info(f"✅ FCM token deleted for user {user.id}", extra={'color': True})
-    
-    return {
-        "message": "FCM token deleted successfully",
-        "user_id": user.id
-    }
+    return {"message": "FCM token deleted successfully"}
 
