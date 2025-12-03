@@ -144,6 +144,103 @@ def get_all_users(current_user=Depends(require_admin), db: Session = Depends(get
         for user in users
     ]
 
+@user_router.put("/me")
+def update_current_user(
+    first_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    birthdate: Optional[str] = Form(None),
+    profile_picture: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Allow authenticated users to update their own profile.
+    Email cannot be changed through this endpoint.
+    """
+    user_id = current_user['user_id']
+
+    # 1. Find user
+    user = db.query(User).filter(User.id == user_id, User.deleted_at == None).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # 2. Handle profile picture upload
+    if profile_picture:
+        try:
+            filename = upload_profile_image(profile_picture)
+            user.profile_picture = filename
+        except HTTPException:
+            logger.exception("HTTP error while uploading profile for user_id=%s", user_id)
+            raise
+        except Exception as e:
+            logger.exception(
+                "Unexpected error uploading profile picture for user_id=%s, filename=%s",
+                user_id,
+                getattr(profile_picture, "filename", None),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload profile picture: {str(e)}"
+            )
+
+    # 3. Update only provided fields
+    if first_name:
+        user.first_name = first_name
+    if last_name:
+        user.last_name = last_name
+
+    # 4. Update birthdate in questionnaire if provided
+    if birthdate:
+        from models.questionnaire import UserQuestionnaire
+        try:
+            birthdate_obj = datetime.fromisoformat(birthdate.replace('Z', '+00:00'))
+            questionnaire = db.query(UserQuestionnaire).filter(
+                UserQuestionnaire.user_id == user_id
+            ).first()
+
+            if questionnaire:
+                questionnaire.birthday = birthdate_obj
+            else:
+                # Create questionnaire if it doesn't exist
+                new_questionnaire = UserQuestionnaire(
+                    user_id=user_id,
+                    birthday=birthdate_obj
+                )
+                db.add(new_questionnaire)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid birthdate format. Use ISO format (YYYY-MM-DD)"
+            )
+
+    # 5. Save changes
+    user.updated_at = datetime.now()
+    db.commit()
+    db.refresh(user)
+
+    # 6. Get updated questionnaire data
+    from models.questionnaire import UserQuestionnaire
+    questionnaire = db.query(UserQuestionnaire).filter(
+        UserQuestionnaire.user_id == user.id
+    ).first()
+    birthdate_result = questionnaire.birthday if questionnaire else None
+
+    return {
+        "message": "Profile updated successfully",
+        "user": {
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "profile_picture": user.profile_picture,
+            "birthdate": birthdate_result,
+            "updated_at": user.updated_at,
+        },
+    }
+
 @user_router.delete('/{user_id}')
 def delete_user(
     user_id: int,
@@ -326,104 +423,6 @@ def admin_reset_password(
         "message": f"E-mail za resetiranje lozinke poslan korisniku {user.email}",
         "user_id": user.id,
         "email": user.email
-    }
-
-
-@user_router.put("/me")
-def update_current_user(
-    first_name: Optional[str] = Form(None),
-    last_name: Optional[str] = Form(None),
-    birthdate: Optional[str] = Form(None),
-    profile_picture: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    """
-    Allow authenticated users to update their own profile.
-    Email cannot be changed through this endpoint.
-    """
-    user_id = current_user['user_id']
-
-    # 1. Find user
-    user = db.query(User).filter(User.id == user_id, User.deleted_at == None).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    # 2. Handle profile picture upload
-    if profile_picture:
-        try:
-            filename = upload_profile_image(profile_picture)
-            user.profile_picture = filename
-        except HTTPException:
-            logger.exception("HTTP error while uploading profile for user_id=%s", user_id)
-            raise
-        except Exception as e:
-            logger.exception(
-                "Unexpected error uploading profile picture for user_id=%s, filename=%s",
-                user_id,
-                getattr(profile_picture, "filename", None),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload profile picture: {str(e)}"
-            )
-
-    # 3. Update only provided fields
-    if first_name:
-        user.first_name = first_name
-    if last_name:
-        user.last_name = last_name
-
-    # 4. Update birthdate in questionnaire if provided
-    if birthdate:
-        from models.questionnaire import UserQuestionnaire
-        try:
-            birthdate_obj = datetime.fromisoformat(birthdate.replace('Z', '+00:00'))
-            questionnaire = db.query(UserQuestionnaire).filter(
-                UserQuestionnaire.user_id == user_id
-            ).first()
-
-            if questionnaire:
-                questionnaire.birthday = birthdate_obj
-            else:
-                # Create questionnaire if it doesn't exist
-                new_questionnaire = UserQuestionnaire(
-                    user_id=user_id,
-                    birthday=birthdate_obj
-                )
-                db.add(new_questionnaire)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid birthdate format. Use ISO format (YYYY-MM-DD)"
-            )
-
-    # 5. Save changes
-    user.updated_at = datetime.now()
-    db.commit()
-    db.refresh(user)
-
-    # 6. Get updated questionnaire data
-    from models.questionnaire import UserQuestionnaire
-    questionnaire = db.query(UserQuestionnaire).filter(
-        UserQuestionnaire.user_id == user.id
-    ).first()
-    birthdate_result = questionnaire.birthday if questionnaire else None
-
-    return {
-        "message": "Profile updated successfully",
-        "user": {
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "email": user.email,
-            "profile_picture": user.profile_picture,
-            "birthdate": birthdate_result,
-            "updated_at": user.updated_at,
-        },
     }
 
 
